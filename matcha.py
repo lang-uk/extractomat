@@ -28,6 +28,29 @@ SECRET_REGEX = re.compile(r"^(?!HYPH_)(NNS?_|JJS?_|HYPH_|NNPS?_|NNS?_IN_)*(NNS?_
 #   * adjective (also comparative or superlative) // probably bad idea, disabled for now
 SECRET_REGEX_FOR_ONE_WORD = re.compile(r"^(NNS?_)$")
 
+# UPOS to Penn mapping dictionary
+UPOS_TO_PENN: Dict[str, str] = {
+    "NOUN": "NN",  # Default to singular
+    "PROPN": "NNP",  # Default to singular
+    "ADJ": "JJ",  # Default to basic form
+    "ADP": "IN",
+    "PUNCT": "HYPH",
+}
+
+
+def upos_to_penn(tags: List[str]) -> List[str]:
+    """Convert Universal POS tags to Penn Treebank tags.
+
+    Args:
+        tags: List of Universal POS tags to convert
+
+    Returns:
+        List of converted Penn Treebank tags. Tags that cannot be
+        converted are left unchanged.
+    """
+
+    return [UPOS_TO_PENN.get(tag, tag) for tag in tags]
+
 
 def ngrams(
     document: Doc | List[str], n_min: int = 1, n_max: Optional[int] = None
@@ -110,7 +133,7 @@ def get_lemmatized_phrase(phrase: Span) -> List[str]:
     return [token.lemma_.lower() for token in phrase]
 
 
-def is_phrase_matching(phrase: Span, allow_single_word: bool=False) -> bool:
+def is_phrase_matching(phrase: Span, allow_single_word: bool = False) -> bool:
     """
     Determine if a phrase is good for us
 
@@ -121,6 +144,7 @@ def is_phrase_matching(phrase: Span, allow_single_word: bool=False) -> bool:
         bool: True if the phrase is matching the secret regex
     """
     phrase_fingerprint = get_pos_fingerprint(phrase)
+    print(phrase.text, phrase_fingerprint)
 
     # To cover cases when HYPH is recognized as JJ (part of a compound)
     if phrase.text.startswith("-"):
@@ -410,6 +434,7 @@ def cvalue(
     """
     # Extract terms and frequencies
     term_freqs, occurencies = extract_terms(doc, n_min=n_min, n_max=n_max, stopwords=stopwords)
+    print(term_freqs, occurencies)
 
     # Calculate nesting metrics
     superset_counts, _ = calculate_nesting(term_freqs, use_frequencies=use_frequencies)
@@ -483,7 +508,7 @@ def cvalue(
 
 if __name__ == "__main__":  # pragma: no cover
     # Example usage
-    nlp = spacy.load("en_core_web_sm", disable=["parser", "entity"])
+    nlp = spacy.load("uk_core_news_trf", disable=["parser", "entity"])
     text = "This deep neural network uses artificial neural network architecture for deep learning"
     #     text = """Central to the development of cancer are genetic changes that endow these “cancer cells” with many of the
     # hallmarks of cancer, such as self-sufficient growth and resistance to anti-growth and pro-death signals. However, while the
@@ -497,6 +522,17 @@ if __name__ == "__main__":  # pragma: no cover
 
     text = "this deep neural network and that deep neural network and shallow neural network"
     text = "Artificial intelligence is a field of science concerned with building computers and machines that can reason, learn, and act in such a way that would normally require human intelligence or that involves data whose scale exceeds what humans can analyze."
+    text = """ОНТОЛОГІЇ ЧАСУ: ОГЛЯД І ТЕНДЕНЦІЇ
+Час як феномен перебуває у фокусі наукової думки з давніх часів. Він продовжує залишатися важливим предметом дослідження в багатьох дисциплінах через його важливість як базового аспекту для розуміння та формального подання змін. Мета цього аналітичного огляду - з'ясувати, чи формальні подання часу, розроблені на сьогоднішній день, є достатніми щодо вимог фундаментальних і прикладних досліджень у галузі комп'ютерних наук, зокрема, в рамках спільнот штучного інтелекту та семантичного вебу. Щоб проаналізувати, чи існуючі базові теорії, моделі та реалізовані онтології часу добре покривають ці вимоги, було виокремлено та належним чином структуровано набір ознак часу, використовуючи в якості корпусу документів колекцію документів серії симпозіумів TIME. Цей
+ набір ознак також допоміг структурувати порівняльний огляд та аналіз найвизначніших теорій часу. В результаті було здійснено відбір підмножини ознак часу (вимог до синтетичної теорії), що відображає 
+сентимент спільноти TIME.  Далі було проаналізовано наявні на сьогоднішній день часові логіки, мови подання та онтології з точки зору їхньої зручності використання та охоплення вибраних часових характеристик. Результати показують, що 
+оглянуті онтології часу, взяті разом, не задовільно охоплюють деякі важливі характеристики: (i) щільність; (ii) релаксовану лінійність; (iii) фактори масштабу; (iv) точні та періодичні субінтервали; (v) часові міри та годинники.  Зроблено висновок, що необхідні міждисциплінарні зусилля для розгляду особливостей, не охоплених існуючими онтологіями часу, а також щоб гармонізувати подання, що розглядаються по-різному.   
+Ключові слова: Час; сентимент; темпоральна характеристика; охоплення; онтологія; подання; вивід.
+1.	Вступ
+Відомо, що «коли Бог створив час, він створив його багато». Прикметно, що коли йдеться про формальне ставлення до часу, стан справ дуже схожий на цю ірландську приказку.  Час, як явище, був у центрі уваги наукової думки з давніх часів. Сьогодні він продовжує залишатися важливим предметом дослідження для філософів, фізиків, математиків, логіків, комп'ютерників і навіть біологів. Однією з причин, можливо, є те, що час є фундаментальним аспектом для розуміння і реагування на зміни у світі, включаючи найширше різноманіття застосувань, які впливають на еволюцію людства. Отже, прогрес у розумінні світу в його динаміці: (а) ґрунтується на наявності адекватно насиченої і глибокої моделі часу; і (б) підштовхує до подальшого вдосконалення наших моделей часу.  Наприклад, у комп'ютерних науках розвиток штучного інтелекту, баз даних, розподілених систем тощо за останні два десятиліття викликав до життя кілька видатних теоретичних концепцій, що стосуються часових аспектів. Деякі частини цих теорій дали поштовх дослідженням в логіці, що призвело до появи 
+сімейства темпоральних логік, які включають в себе 
+дескриптивні логіки часу. На основі цього логічного фундаменту мови подання знань отримали можливість репрезентувати час, а 
+спільнота Semantic Web реалізувала кілька онтологій часу.  Однак важливо з'ясувати, чи достатньо цього багатства, щоб задовольнити вимоги в дослідженнях і розробках в галузі комп'ютерних наук."""
 
     test_scores, _ = cvalue(nlp(text), use_frequencies=False)
 
@@ -505,16 +541,16 @@ if __name__ == "__main__":  # pragma: no cover
     for a_term, a_score in sorted(test_scores.items(), key=lambda x: x[1], reverse=True):
         print(f"{a_term}: {a_score:.3f}")
 
-    test_scores, _ = combo_basic(nlp(text), use_frequencies=False)
+    # test_scores, _ = combo_basic(nlp(text), use_frequencies=False)
 
-    print("ComboBasic scores:")
-    # Print scores in descending order
-    for a_term, a_score in sorted(test_scores.items(), key=lambda x: x[1], reverse=True):
-        print(f"{a_term}: {a_score:.3f}")
+    # print("ComboBasic scores:")
+    # # Print scores in descending order
+    # for a_term, a_score in sorted(test_scores.items(), key=lambda x: x[1], reverse=True):
+    #     print(f"{a_term}: {a_score:.3f}")
 
-    test_scores, _ = basic(nlp(text), use_frequencies=False)
+    # test_scores, _ = basic(nlp(text), use_frequencies=False)
 
-    print("Basic scores:")
-    # Print scores in descending order
-    for a_term, a_score in sorted(test_scores.items(), key=lambda x: x[1], reverse=True):
-        print(f"{a_term}: {a_score:.3f}")
+    # print("Basic scores:")
+    # # Print scores in descending order
+    # for a_term, a_score in sorted(test_scores.items(), key=lambda x: x[1], reverse=True):
+    #     print(f"{a_term}: {a_score:.3f}")

@@ -16,6 +16,7 @@ from matcha import (
     combo_basic,
     basic,
     cvalue,
+    upos_to_penn,
 )
 
 
@@ -83,7 +84,9 @@ class TestNgrams:
 
     def test_invalid_n_max(self, basic_doc: spacy.tokens.Doc):
         """Test error handling for invalid n_max."""
-        with pytest.raises(ValueError, match="n_max must be greater than or equal to n_min"):
+        with pytest.raises(
+            ValueError, match="n_max must be greater than or equal to n_min"
+        ):
             list(ngrams(basic_doc, n_min=2, n_max=1))
 
 
@@ -165,7 +168,9 @@ class TestFingerprintAndLemmatization:
             ("Is Going", "be go"),
         ],
     )
-    def test_lemmatize_parametrized(self, nlp: Callable, text: str, expected_lemma: str):
+    def test_lemmatize_parametrized(
+        self, nlp: Callable, text: str, expected_lemma: str
+    ):
         """Test lemmatization with various input patterns and case variations."""
         doc = nlp(text)
         span = doc[0 : len(doc)]
@@ -218,11 +223,12 @@ class TestIsPhraseMatching:
         doc = nlp("dog")
         assert is_phrase_matching(doc[0:1]), "Common noun alone should match"
 
-        # Single adj should match if single word is allowed
+        # Disabled the detection of single word adjs for now.
+        ## Single adj should match if single word is allowed
         doc = nlp("Playful")
-        assert is_phrase_matching(
-            doc[0:1], allow_single_word=True
-        ), "Adj alone should match if allowed"
+        # assert is_phrase_matching(
+        #     doc[0:1], allow_single_word=True
+        # ), "Adj alone should match if allowed"
         assert not is_phrase_matching(doc[0:1]), "Adj alone shouldn't match"
 
         # Complex noun phrase with preposition
@@ -238,11 +244,15 @@ class TestIsPhraseMatching:
         assert is_phrase_matching(doc[4:7]), "Compound noun with hyphen should match"
 
         doc = nlp("Short-term")
-        assert is_phrase_matching(doc[0:3]), "Compound adjectives with hyphen should match too"
+        assert is_phrase_matching(
+            doc[0:3]
+        ), "Compound adjectives with hyphen should match too"
 
         # Multiple adjectives
         doc = nlp("deep convolutional neural network")
-        assert is_phrase_matching(doc[0:4]), "Multiple adjectives ending in noun should match"
+        assert is_phrase_matching(
+            doc[0:4]
+        ), "Multiple adjectives ending in noun should match"
 
     def test_is_phrase_matching_nested_spans(self, nlp: Callable):
         """Test phrase matching with nested term candidates."""
@@ -250,9 +260,13 @@ class TestIsPhraseMatching:
 
         # Test various nested spans
         assert is_phrase_matching(doc[0:4]), "Full span should match"
-        assert is_phrase_matching(doc[0:3]), "Nested 'artificial neural network' should match"
+        assert is_phrase_matching(
+            doc[0:3]
+        ), "Nested 'artificial neural network' should match"
         assert is_phrase_matching(doc[1:3]), "Nested 'neural network' should match"
-        assert is_phrase_matching(doc[2:4]), "Nested 'network architecture' should match"
+        assert is_phrase_matching(
+            doc[2:4]
+        ), "Nested 'network architecture' should match"
 
 
 class TestExtractTerms:
@@ -312,7 +326,9 @@ class TestExtractTerms:
         doc = nlp("The neural network processes data using a neural network model")
         freq, occurrences = extract_terms(doc)
 
-        assert freq["neural network"] == 2, "Should count two occurrences of 'neural network'"
+        assert (
+            freq["neural network"] == 2
+        ), "Should count two occurrences of 'neural network'"
         assert occurrences["neural network"] == {"neural network"}
         assert freq["neural network model"] == 1
 
@@ -321,13 +337,16 @@ class TestExtractTerms:
         doc = nlp("The neural network processes data using a neural network model")
         freq, _ = extract_terms(doc, n_min=1)
 
-        assert freq["neural"] == 2, "Should count two occurrences of 'neural'"
+        # Disabled the detection of single word adjs for now.
+        # assert freq["neural"] == 2, "Should count two occurrences of 'neural'"
         assert freq["network"] == 2, "Should count two occurrences of 'network'"
         assert freq["datum"] == 1, "Should count 1 occurrences of lemmatized 'data'"
         assert freq["model"] == 1, "Should count two occurrences of 'model'"
         assert freq["processes"] == 0, "Should find none of verbs"
 
-        assert freq["neural network"] == 2, "Should count two occurrences of 'neural network'"
+        assert (
+            freq["neural network"] == 2
+        ), "Should count two occurrences of 'neural network'"
         assert freq["neural network model"] == 1
 
     def test_extract_terms_case_variations(self, nlp: Callable):
@@ -393,11 +412,17 @@ class TestExtractTerms:
             # Multiple adjectives
             (
                 "statistical machine learning",
-                {"statistical machine learning", "statistical machine", "machine learning"},
+                {
+                    "statistical machine learning",
+                    "statistical machine",
+                    "machine learning",
+                },
             ),
         ],
     )
-    def test_extract_terms_parametrized(self, nlp: Callable, text: str, expected_terms: Set[str]):
+    def test_extract_terms_parametrized(
+        self, nlp: Callable, text: str, expected_terms: Set[str]
+    ):
         """Test term extraction with various input patterns."""
         doc = nlp(text)
         freq, _ = extract_terms(doc)
@@ -669,7 +694,9 @@ class TestNestingMetrics:
 
         # Check number of appearances
         assert supersets["neural network"] == 3  # appears in all longer terms
-        assert supersets["deep neural network"] == 1  # appears in 'very deep neural network'
+        assert (
+            supersets["deep neural network"] == 1
+        )  # appears in 'very deep neural network'
         assert supersets["artificial neural network"] == 0  # appears in no terms
         assert supersets["very deep neural network"] == 0  # appears in no terms
 
@@ -770,7 +797,9 @@ class TestComboBasic:
 
     def test_frequency_weighting(self, nlp):
         """Test scoring with frequency weighting in nesting calculations."""
-        doc = nlp("neural network... neural network... deep neural network... deep neural network")
+        doc = nlp(
+            "neural network... neural network... deep neural network... deep neural network"
+        )
         scores, _ = combo_basic(doc, use_frequencies=True)
 
         # neural network appears twice in deep neural network which appears twice
@@ -780,7 +809,9 @@ class TestComboBasic:
 
     def test_smoothing(self, nlp):
         """Test scoring with frequency smoothing in nesting calculations."""
-        doc = nlp("neural network... neural network... deep neural network... deep neural network")
+        doc = nlp(
+            "neural network... neural network... deep neural network... deep neural network"
+        )
         scores, _ = combo_basic(doc, smoothing=2)
 
         expected_nn = 2 * math.log(3 + 2) + 0.75 * 1
@@ -861,11 +892,15 @@ class TestCValue:
         # - length = 3, freq = 1, not nested
         # score = log2(3.1) * 1
         expected_score_dnn = math.log2(3.1)
-        assert math.isclose(scores["deep neural network"], expected_score_dnn, rel_tol=1e-10)
+        assert math.isclose(
+            scores["deep neural network"], expected_score_dnn, rel_tol=1e-10
+        )
 
     def test_multiple_nested_occurrences(self, nlp):
         """Test C-Value with multiple containing terms."""
-        doc = nlp("a neural network, the deep neural network and the artificial neural network")
+        doc = nlp(
+            "a neural network, the deep neural network and the artificial neural network"
+        )
         scores, _ = cvalue(doc)
 
         # For "neural network":
@@ -886,17 +921,6 @@ class TestCValue:
         expected_score = math.log2(2.1) * 3
         assert math.isclose(scores["neural network"], expected_score, rel_tol=1e-10)
 
-    def test_length_impact(self, nlp):
-        """Test how term length affects the score."""
-        doc = nlp("very deep neural network deep neural network")
-        scores, _ = cvalue(doc)
-
-        # Compare scores of different length terms
-        # longer term should have higher length factor
-        len_factor_3 = math.log2(3.1)  # for 3-word term
-        len_factor_4 = math.log2(4.1)  # for 4-word term
-        assert len_factor_4 > len_factor_3
-
     def test_empty_doc(self, nlp):
         """Test C-Value with empty document."""
         doc = nlp("")
@@ -915,7 +939,9 @@ class TestCValue:
 
     def test_length_limits(self, nlp):
         """Test C-Value with different length limits."""
-        doc = nlp("neural network deep neural network artificial neural network architecture")
+        doc = nlp(
+            "neural network deep neural network artificial neural network architecture"
+        )
 
         # Test with n_max=2
         scores_max2, _ = cvalue(doc, n_max=2)
@@ -926,3 +952,23 @@ class TestCValue:
         scores_min3, _ = cvalue(doc, n_min=3)
         assert "neural network" not in scores_min3
         assert "deep neural network" in scores_min3
+
+
+class TestUPOSToPenn:
+    """Test cases for UPOS to Penn tag conversion."""
+
+    def test_basic_conversion(self):
+        """Test basic UPOS to Penn conversion."""
+        input_tags = ["NOUN", "ADJ", "PROPN", "ADP"]
+        expected = ["NN", "JJ", "NNP", "IN"]
+        assert upos_to_penn(input_tags) == expected
+
+    def test_unknown_tags(self):
+        """Test UPOS to Penn conversion with unknown tags."""
+        input_tags = ["NOUN", "UNKNOWN", "PROPN", "XX"]
+        expected = ["NN", "UNKNOWN", "NNP", "XX"]
+        assert upos_to_penn(input_tags) == expected
+
+    def test_empty_list(self):
+        """Test UPOS to Penn conversion with empty input."""
+        assert upos_to_penn([]) == []
