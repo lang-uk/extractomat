@@ -4,6 +4,7 @@ from typing import Callable, Set, List
 
 import pytest
 import spacy
+from spacy.tokens import Span
 
 from matcha import (
     ngrams,
@@ -17,6 +18,7 @@ from matcha import (
     basic,
     cvalue,
     upos_to_penn,
+    extract_context,
 )
 
 
@@ -274,6 +276,9 @@ class TestExtractTerms:
     def nlp(self):
         return spacy.load("en_core_web_sm", disable=["parser", "ner"])
 
+    def spans_to_texts(self, spans):
+        return [span.text for span in spans]
+
     def test_extract_terms_basic(self, nlp: Callable):
         """Test basic term extraction with fox sentence."""
         doc = nlp("The big brown fox jumps over the lazy dog")
@@ -289,9 +294,9 @@ class TestExtractTerms:
         assert freq["brown fox"] == 1
         assert freq["lazy dog"] == 1
 
-        assert occurrences["big brown fox"] == {"big brown fox"}
-        assert occurrences["brown fox"] == {"brown fox"}
-        assert occurrences["lazy dog"] == {"lazy dog"}
+        assert self.spans_to_texts(occurrences["big brown fox"]) == ["big brown fox"]
+        assert self.spans_to_texts(occurrences["brown fox"]) == ["brown fox"]
+        assert self.spans_to_texts(occurrences["lazy dog"]) == ["lazy dog"]
 
     def test_extract_terms_neural(self, nlp: Callable):
         """Test term extraction with neural network example."""
@@ -329,7 +334,10 @@ class TestExtractTerms:
         assert (
             freq["neural network"] == 2
         ), "Should count two occurrences of 'neural network'"
-        assert occurrences["neural network"] == {"neural network"}
+        assert self.spans_to_texts(occurrences["neural network"]) == [
+            "neural network",
+            "neural network",
+        ]
         assert freq["neural network model"] == 1
 
     def test_extract_terms_with_signle_words(self, nlp: Callable):
@@ -356,7 +364,10 @@ class TestExtractTerms:
 
         # Should normalize to same lemma despite case difference
         assert freq["neural network"] == 2
-        assert occurrences["neural network"] == {"Neural network", "neural network"}
+        assert self.spans_to_texts(occurrences["neural network"]) == [
+            "Neural network",
+            "neural network",
+        ]
 
     def test_extract_terms_length_limits(self, nlp: Callable):
         """Test term extraction with different length limits."""
@@ -972,3 +983,271 @@ class TestUPOSToPenn:
     def test_empty_list(self):
         """Test UPOS to Penn conversion with empty input."""
         assert upos_to_penn([]) == []
+
+
+class TestContextWindow:
+    """Test suite for context window extraction."""
+
+    @pytest.fixture
+    def nlp(self) -> Callable:
+        """Fixture providing spaCy model."""
+        return spacy.load("en_core_web_sm")  # , disable=["parser", "entity"])
+
+    def test_extract_single_sentence(self, nlp):
+        """Test extracting only the sentence where span belongs (n=1)."""
+        text = "This is sentence one. This is sentence two. This is sentence three."
+        doc = nlp(text)
+
+        # Create a span in sentence two
+        span = doc[5:9]  # "is sentence two"
+        lemma_spans = {"lemma1": [span]}
+
+        result = extract_context(doc, lemma_spans, n=1)
+
+        assert len(result["lemma1"]) == 1
+        surrounding_sents, original_span = result["lemma1"][0]
+
+        assert len(surrounding_sents) == 1
+        assert surrounding_sents[0].text == "This is sentence two."
+        assert original_span == span
+
+    def test_extract_two_sentences(self, nlp):
+        """Test extracting span's sentence plus one before (n=2)."""
+        text = "This is sentence one. This is sentence two. This is sentence three."
+        doc = nlp(text)
+
+        # Create a span in sentence two
+        span = doc[5:9]  # "is sentence two"
+        lemma_spans = {"lemma1": [span]}
+
+        result = extract_context(doc, lemma_spans, n=2)
+
+        assert len(result["lemma1"]) == 1
+        surrounding_sents, original_span = result["lemma1"][0]
+
+        assert len(surrounding_sents) == 2
+        assert surrounding_sents[0].text == "This is sentence one."
+        assert surrounding_sents[1].text == "This is sentence two."
+        assert original_span == span
+
+    def test_extract_three_sentences(self, nlp):
+        """Test extracting span's sentence plus one before and after (n=3)."""
+        text = "This is sentence one. This is sentence two. This is sentence three."
+        doc = nlp(text)
+
+        # Create a span in sentence two
+        span = doc[5:9]  # "is sentence two"
+        lemma_spans = {"lemma1": [span]}
+
+        result = extract_context(doc, lemma_spans, n=3)
+
+        assert len(result["lemma1"]) == 1
+        surrounding_sents, original_span = result["lemma1"][0]
+
+        assert len(surrounding_sents) == 3
+        assert surrounding_sents[0].text == "This is sentence one."
+        assert surrounding_sents[1].text == "This is sentence two."
+        assert surrounding_sents[2].text == "This is sentence three."
+        assert original_span == span
+
+    def test_beginning_of_document(self, nlp):
+        """Test behavior when span is at the beginning of the document (n=2)."""
+        text = "This is sentence one. This is sentence two. This is sentence three."
+        doc = nlp(text)
+
+        # Create a span in sentence one
+        span = doc[0:4]  # "This is sentence one"
+        lemma_spans = {"lemma1": [span]}
+
+        result = extract_context(doc, lemma_spans, n=2)
+
+        assert len(result["lemma1"]) == 1
+        surrounding_sents, original_span = result["lemma1"][0]
+
+        # Should include first sentence and the next one
+        assert len(surrounding_sents) == 2
+        assert surrounding_sents[0].text == "This is sentence one."
+        assert surrounding_sents[1].text == "This is sentence two."
+        assert original_span == span
+
+    def test_end_of_document(self, nlp):
+        """Test behavior when span is at the end of the document (n=2)."""
+        text = "This is sentence one. This is sentence two. This is sentence three."
+        doc = nlp(text)
+
+        # Create a span in sentence three
+        span = doc[10:14]  # "This is sentence three"
+        lemma_spans = {"lemma1": [span]}
+
+        result = extract_context(doc, lemma_spans, n=2)
+
+        assert len(result["lemma1"]) == 1
+        surrounding_sents, original_span = result["lemma1"][0]
+
+        # Should include last sentence and the previous one
+        assert len(surrounding_sents) == 2
+        assert surrounding_sents[0].text == "This is sentence two."
+        assert surrounding_sents[1].text == "This is sentence three."
+        assert original_span == span
+
+    def test_cross_sentence_span(self, nlp):
+        """Test behavior when span crosses sentence boundaries."""
+        text = "This is sentence one. This is sentence two. This is sentence three."
+        doc = nlp(text)
+
+        # Create a span that crosses from sentence one to sentence two
+        span = Span(doc, 3, 7)  # "sentence one. This is"
+        lemma_spans = {"lemma1": [span]}
+
+        result = extract_context(doc, lemma_spans, n=1)
+
+        assert len(result["lemma1"]) == 1
+        surrounding_sents, original_span = result["lemma1"][0]
+
+        # Should include both sentences the span crosses
+        assert len(surrounding_sents) == 2
+        assert surrounding_sents[0].text == "This is sentence one."
+        assert surrounding_sents[1].text == "This is sentence two."
+        assert original_span == span
+
+    def test_multiple_cross_sentence_span(self, nlp):
+        """Test behavior when span crosses multiple sentence boundaries."""
+        text = "This is one. This is two. This is three. This is four."
+        doc = nlp(text)
+
+        # Create a span that crosses from sentence one through three
+        span = Span(doc, 2, 11)  # "one. This is two. This is"
+        lemma_spans = {"lemma1": [span]}
+
+        result = extract_context(doc, lemma_spans, n=2)
+
+        assert len(result["lemma1"]) == 1
+        surrounding_sents, original_span = result["lemma1"][0]
+
+        # Should include the three sentences the span crosses, plus one more to reach n=4
+        assert len(surrounding_sents) >= 3
+        assert surrounding_sents[0].text == "This is one."
+        assert surrounding_sents[1].text == "This is two."
+        assert surrounding_sents[2].text == "This is three."
+        assert original_span == span
+
+    def test_multiple_lemmas_and_spans(self, nlp):
+        """Test with multiple lemmas and spans."""
+        text = "This is one. This is two. This is three. This is four. This is five."
+        doc = nlp(text)
+
+        # Create multiple spans for different lemmas
+        span1 = doc[2:3]  # "one"
+        span2 = doc[6:7]  # "two"
+        span3 = doc[14:15]  # "four"
+
+        lemma_spans = {"lemma1": [span1, span3], "lemma2": [span2]}
+
+        result = extract_context(doc, lemma_spans, n=1)
+
+        # Check lemma1 results
+        assert len(result["lemma1"]) == 2
+        assert len(result["lemma1"][0][0]) == 1  # First span has 1 sentence
+        assert result["lemma1"][0][0][0].text == "This is one."
+        assert result["lemma1"][0][1] == span1
+
+        assert len(result["lemma1"][1][0]) == 1  # Second span has 1 sentence
+        assert result["lemma1"][1][0][0].text == "This is four."
+        assert result["lemma1"][1][1] == span3
+
+        # Check lemma2 results
+        assert len(result["lemma2"]) == 1
+        assert len(result["lemma2"][0][0]) == 1
+        assert result["lemma2"][0][0][0].text == "This is two."
+        assert result["lemma2"][0][1] == span2
+
+    def test_empty_doc(self, nlp):
+        """Test behavior with empty document."""
+        doc = nlp("")
+        lemma_spans = {"lemma1": []}
+
+        result = extract_context(doc, lemma_spans, n=1)
+
+        assert "lemma1" in result
+        assert result["lemma1"] == []
+
+    def test_multiple_cross_sentence_span_with_long_context(self, nlp):
+        """Test behavior when span crosses multiple sentence boundaries."""
+        text = (
+            "This is zero. This is one. This is two. This is three. This is four. "
+            + "This is five. This is six. This is seven. This is eight. This is nine."
+        )
+        doc = nlp(text)
+
+        # Create a span that crosses from sentence one through three
+        span = Span(doc, 14, 23)  # "three. This is four. This is five"
+        lemma_spans = {"lemma1": [span]}
+
+        result = extract_context(doc, lemma_spans, n=1)
+
+        surrounding_sents, _ = result["lemma1"][0]
+
+        assert len(surrounding_sents) == 3
+        assert surrounding_sents[0].text == "This is three."
+        assert surrounding_sents[1].text == "This is four."
+        assert surrounding_sents[2].text == "This is five."
+
+        result = extract_context(doc, lemma_spans, n=2)
+
+        surrounding_sents, _ = result["lemma1"][0]
+
+        assert len(surrounding_sents) == 4
+        assert surrounding_sents[0].text == "This is two."
+        assert surrounding_sents[1].text == "This is three."
+        assert surrounding_sents[2].text == "This is four."
+        assert surrounding_sents[3].text == "This is five."
+
+        result = extract_context(doc, lemma_spans, n=3)
+
+        surrounding_sents, _ = result["lemma1"][0]
+
+        assert len(surrounding_sents) == 5
+        assert surrounding_sents[0].text == "This is two."
+        assert surrounding_sents[1].text == "This is three."
+        assert surrounding_sents[2].text == "This is four."
+        assert surrounding_sents[3].text == "This is five."
+        assert surrounding_sents[4].text == "This is six."
+
+        result = extract_context(doc, lemma_spans, n=4)
+
+        surrounding_sents, _ = result["lemma1"][0]
+
+        assert len(surrounding_sents) == 6
+        assert surrounding_sents[0].text == "This is one."
+        assert surrounding_sents[1].text == "This is two."
+        assert surrounding_sents[2].text == "This is three."
+        assert surrounding_sents[3].text == "This is four."
+        assert surrounding_sents[4].text == "This is five."
+        assert surrounding_sents[5].text == "This is six."
+
+        result = extract_context(doc, lemma_spans, n=5)
+
+        surrounding_sents, _ = result["lemma1"][0]
+
+        assert len(surrounding_sents) == 7
+        assert surrounding_sents[0].text == "This is one."
+        assert surrounding_sents[1].text == "This is two."
+        assert surrounding_sents[2].text == "This is three."
+        assert surrounding_sents[3].text == "This is four."
+        assert surrounding_sents[4].text == "This is five."
+        assert surrounding_sents[5].text == "This is six."
+        assert surrounding_sents[6].text == "This is seven."
+
+        result = extract_context(doc, lemma_spans, n=6)
+
+        surrounding_sents, _ = result["lemma1"][0]
+
+        assert len(surrounding_sents) == 8
+        assert surrounding_sents[0].text == "This is zero."
+        assert surrounding_sents[1].text == "This is one."
+        assert surrounding_sents[2].text == "This is two."
+        assert surrounding_sents[3].text == "This is three."
+        assert surrounding_sents[4].text == "This is four."
+        assert surrounding_sents[5].text == "This is five."
+        assert surrounding_sents[6].text == "This is six."
+        assert surrounding_sents[7].text == "This is seven."

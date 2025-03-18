@@ -34,7 +34,12 @@ UPOS_TO_PENN: Dict[str, str] = {
     "PROPN": "NNP",  # Default to singular
     "ADJ": "JJ",  # Default to basic form
     "ADP": "IN",
-    "PUNCT": "HYPH",
+    "ADJA": "JJ", # German
+    "KOUS": "IN", # German
+    "KON": "CC", # German
+    "APPR": "IN", # German
+    "APPRART": "IN", # German
+    "KOUI": "IN", # German
 }
 
 
@@ -85,6 +90,73 @@ def ngrams(
             yield document[start_idx : start_idx + n]
 
 
+def extract_context(
+    doc: Doc, lemma_spans: Dict[str, List[Span]], n: int = 1
+) -> Dict[str, List[Tuple[List[Span], Span]]]:
+    """
+    Extract n sentences surrounding each span in the lemma_spans mapping.
+
+    Args:
+        doc: A spaCy Doc object
+        lemma_spans: A dictionary mapping lemmas to lists of Span objects
+        n: Number of sentences to extract (n=1: only the sentence where span belongs,
+                                          n=2: span's sentence + one before,
+                                          n=3: span's sentence + one before and after, etc.)
+
+    Returns:
+        A dictionary mapping lemmas to lists of tuples, where each tuple contains:
+        - A list of sentence Spans (the surrounding sentences)
+        - The original Span
+    """
+    # Get all sentences in the document
+    sentences = list(doc.sents)
+    total_sentences = len(sentences)
+
+    result = {}
+
+    for lemma, spans in lemma_spans.items():
+        result[lemma] = []
+
+        for span in spans:
+            # Find all sentences that overlap with the span
+            overlapping_indices = []
+            for i, sent in enumerate(sentences):
+                if span.start < sent.end and span.end > sent.start:
+                    overlapping_indices.append(i)
+
+            if not overlapping_indices:
+                continue  # Skip if span doesn't overlap with any sentence
+
+            # Find the first and last sentence indices containing the span
+            min_idx = min(overlapping_indices)
+            max_idx = max(overlapping_indices)
+
+            start_idx = min_idx
+            end_idx = max_idx
+
+            if n > 1:
+                # We need to add (n - 1) more sentences
+                remaining = n - 1
+
+                # Add sentences before the span first
+                before_count = min(min_idx, math.ceil(remaining / 2))
+                start_idx = min_idx - before_count
+
+                # Then add sentences after the span if needed
+                after_count = min(
+                    total_sentences - 1 - max_idx, remaining - before_count
+                )
+                end_idx = max_idx + after_count
+
+            # Get the sentence spans
+            context_sentences = [sentences[i] for i in range(start_idx, end_idx + 1)]
+
+            # Add to result
+            result[lemma].append((context_sentences, span))
+
+    return result
+
+
 def subphrases(phrase: str | Doc | Span, n_min: int = 2) -> Iterator[str]:
     """
     Generate all possible contiguous subsequences of a tokenized phrase,
@@ -118,7 +190,15 @@ def get_pos_fingerprint(phrase: Span) -> str:
     Returns:
         String representing the POS fingerprint
     """
-    return "".join(token.tag_ + "_" for token in phrase)
+
+    for token in phrase:
+        if token.text in ["-", "–", "—", "−"]:
+            token.tag_ = "HYPH"
+        elif token.is_punct:
+            token.tag_ = "PUNCT"
+
+    converted_tags = upos_to_penn([token.tag_ for token in phrase])
+    return "".join(token_tag + "_" for token_tag in converted_tags)
 
 
 def get_lemmatized_phrase(phrase: Span) -> List[str]:
@@ -144,7 +224,7 @@ def is_phrase_matching(phrase: Span, allow_single_word: bool = False) -> bool:
         bool: True if the phrase is matching the secret regex
     """
     phrase_fingerprint = get_pos_fingerprint(phrase)
-    print(phrase.text, phrase_fingerprint)
+    # print(phrase.text, phrase_fingerprint)
 
     # To cover cases when HYPH is recognized as JJ (part of a compound)
     if phrase.text.startswith("-"):
@@ -167,6 +247,20 @@ def is_phrase_matching(phrase: Span, allow_single_word: bool = False) -> bool:
         "set of the features of time",
         "subset of the features of time",
         "understanding",
+        # Ukrainian:
+        "фундаментальних і прикладних досліджень",
+        "semantic web",
+        "time",
+        "адекватно насиченої і глибокої моделі часу",
+        "насиченої і глибокої моделі часу",
+        "порівняльний огляд та аналіз",
+        "сентимент спільноти time",
+        "серії симпозіумів time",
+        "спільнот семантичного вебу",
+        "спільнота semantic web",
+        "спільноти time",
+        "фундаментальних і прикладних досліджень",
+        "synthetische theorie",
     ]:
         print(phrase.text, phrase_fingerprint)
 
@@ -179,7 +273,7 @@ def is_phrase_matching(phrase: Span, allow_single_word: bool = False) -> bool:
 
 def extract_terms(
     document: Doc, n_min: int = 2, n_max: int = 6, stopwords: Optional[Set] = None
-) -> Tuple[Dict[str, int], Dict[str, Set[str]]]:
+) -> Tuple[Dict[str, int], Dict[str, List[Span]]]:
     """
     Process a document and return the term candidates as a lemma to frequency mapping
     and a mapping of lemma to occurences in the document
@@ -190,12 +284,12 @@ def extract_terms(
         n_max: Maximum length of ngrams (default=6)
         stopwords: Set of stopwords to ignore (default=None). Has to be lowercased
     Returns:
-        Tuple[Dict[str, int], Dict[str, Set[str]]]: A tuple containing the lemma
+        Tuple[Dict[str, int], Dict[str, List[Span]]]: A tuple containing the lemma
             to frequency mapping and the lemma to occurences mapping
     """
 
     term_freq = Counter()
-    phrase_occurrences = defaultdict(set)
+    phrase_occurrences = defaultdict(list)
     if n_min == 1:
         matcher = lambda x: is_phrase_matching(phrase=x, allow_single_word=True)
     else:
@@ -210,8 +304,7 @@ def extract_terms(
             continue
 
         term_freq[lemmatized_str] += 1
-        phrase_occurrences[lemmatized_str].add(phrase.text)
-        phrase_occurrences[lemmatized_str].add(phrase.text.lower())
+        phrase_occurrences[lemmatized_str].append(phrase)
 
     return term_freq, phrase_occurrences
 
@@ -249,7 +342,9 @@ def calculate_nesting(
                     weight = 1
 
                 superset_counts[subterm] += weight  # subterm appears in container_term
-                subset_counts[container_term] += weight  # container_term contains subterm
+                subset_counts[
+                    container_term
+                ] += weight  # container_term contains subterm
 
     return superset_counts, subset_counts
 
@@ -290,10 +385,14 @@ def combo_basic(
         Dictionary that maps lemmatized terms to their occurences in the document
     """
     # Extract terms and frequencies
-    term_freqs, occurencies = extract_terms(doc, n_min=n_min, n_max=n_max, stopwords=stopwords)
+    term_freqs, occurences = extract_terms(
+        doc, n_min=n_min, n_max=n_max, stopwords=stopwords
+    )
 
     # Calculate nesting metrics
-    superset_counts, subset_counts = calculate_nesting(term_freqs, use_frequencies=use_frequencies)
+    superset_counts, subset_counts = calculate_nesting(
+        term_freqs, use_frequencies=use_frequencies
+    )
 
     table_data = []
     headers = [
@@ -341,11 +440,13 @@ def combo_basic(
 
     # Print formatted table
     # print(tabulate(table_data, headers=headers, floatfmt=".3f", tablefmt="grid"))
-    with open("/tmp/combobasic.tsv" if beta else "/tmp/basic.tsv", "w", encoding="utf-8") as f:
+    with open(
+        "/tmp/combobasic.tsv" if beta else "/tmp/basic.tsv", "w", encoding="utf-8"
+    ) as f:
         f.write(doc.text + "\n")
         f.write(tabulate(table_data, headers=headers, floatfmt=".3f", tablefmt="tsv"))
 
-    return scores, occurencies
+    return scores, occurences
 
 
 def basic(
@@ -433,8 +534,10 @@ def cvalue(
         Dictionary that maps lemmatized terms to their occurences in the document
     """
     # Extract terms and frequencies
-    term_freqs, occurencies = extract_terms(doc, n_min=n_min, n_max=n_max, stopwords=stopwords)
-    print(term_freqs, occurencies)
+    term_freqs, occurences = extract_terms(
+        doc, n_min=n_min, n_max=n_max, stopwords=stopwords
+    )
+    # print(term_freqs, occurences)
 
     # Calculate nesting metrics
     superset_counts, _ = calculate_nesting(term_freqs, use_frequencies=use_frequencies)
@@ -503,12 +606,13 @@ def cvalue(
         f.write(doc.text + "\n")
         f.write(tabulate(table_data, headers=headers, floatfmt=".3f", tablefmt="tsv"))
 
-    return scores, occurencies
+    return scores, occurences
 
 
 if __name__ == "__main__":  # pragma: no cover
     # Example usage
-    nlp = spacy.load("uk_core_news_trf", disable=["parser", "entity"])
+    # nlp = spacy.load("uk_core_news_trf", disable=["parser", "entity"])
+    nlp = spacy.load("de_dep_news_trf", disable=["parser", "entity"])
     text = "This deep neural network uses artificial neural network architecture for deep learning"
     #     text = """Central to the development of cancer are genetic changes that endow these “cancer cells” with many of the
     # hallmarks of cancer, such as self-sufficient growth and resistance to anti-growth and pro-death signals. However, while the
@@ -534,11 +638,19 @@ if __name__ == "__main__":  # pragma: no cover
 дескриптивні логіки часу. На основі цього логічного фундаменту мови подання знань отримали можливість репрезентувати час, а 
 спільнота Semantic Web реалізувала кілька онтологій часу.  Однак важливо з'ясувати, чи достатньо цього багатства, щоб задовольнити вимоги в дослідженнях і розробках в галузі комп'ютерних наук."""
 
+    text = """Ontologien der Zeit: Rückblick und Trends
+Die Zeit als Phänomen steht seit der Antike im Mittelpunkt des wissenschaftlichen Denkens. Sie ist nach wie vor ein wichtiger Forschungsgegenstand in vielen Disziplinen, da sie ein grundlegender Aspekt für das Verständnis und die formale Darstellung von Veränderungen ist. Das Ziel dieses analytischen Überblicks ist es, herauszufinden, ob die bisher entwickelten formalen Darstellungen der Zeit den Bedürfnissen der Grundlagen- und angewandten Forschung in der Informatik und insbesondere innerhalb der Artificial Intelligence und Semantic Web Communities genügen. Um zu analysieren, ob die existierenden grundlegenden Theorien, Modelle und implementierten Ontologien der Zeit diese Bedürfnisse gut abdecken, wurde die Menge der Merkmale der Zeit extrahiert und angemessen strukturiert, indem die Papiersammlung der TIME Symposienreihe als Dokumentenkorpus verwendet wurde. Dieses Merkmalsset half weiter, die vergleichende Überprüfung und Analyse der prominentesten Zeittheorien zu strukturieren. Infolgedessen wurde die Auswahl der Teilmenge der Zeitmerkmale (die Anforderungen an eine Synthetische Theorie) unter Berücksichtigung der Meinung der TIME-Gemeinschaft getroffen.  Des Weiteren wurden die bisher verfügbaren temporalen Logiken, Repräsentationssprachen und Ontologien hinsichtlich ihrer Benutzerfreundlichkeit und der Abdeckung der ausgewählten temporalen Merkmale untersucht. Die Ergebnisse zeigen, dass die untersuchten Ontologien der Zeit zusammengenommen einige wichtige Merkmale nicht zufriedenstellend abdecken: (i) Dichte; (ii) entspannte Linearität; (iii) Skalenfaktoren; (iv) proper and periodic subintervals ; (v) temporale Maße und Uhren.  Man ist zu dem Schluss gekommen, dass eine disziplinübergreifende Anstrengung erforderlich ist, um die von den bestehenden Ontologien der Zeit nicht abgedeckten Merkmale zu behandeln und auch die unterschiedlich behandelten Darstellungen zu harmonisieren.   
+Schlüsselwörter: Zeit; Stimmung; zeitliches Merkmal; Abdeckung; Ontologie; Darstellung; Schlussfolgerungen.
+Einführung
+Es ist bekannt, dass "als Gott die Zeit schuf, er reichlich von ihr schuf". Bemerkenswerterweise folgt der Status, wenn es um die formale Behandlung der Zeit geht, sehr stark diesem irischen Sprichwort.  Die Zeit als Phänomen steht seit der Antike im Mittelpunkt des wissenschaftlichen Denkens. Auch heute noch ist sie ein wichtiger Forschungsgegenstand für Philosophen, Physiker, Mathematiker, Logiker, Informatiker und sogar Biologen. Ein Grund dafür ist vielleicht, dass die Zeit ein grundlegender Aspekt ist, um Veränderungen in der Welt zu verstehen und darauf zu reagieren, einschließlich der unterschiedlichsten Anwendungen, die sich auf die Entwicklung der Menschheit auswirken. Der Fortschritt beim Verständnis der Welt in ihrer Dynamik basiert also (a) auf einem ausreichend reichhaltigen und tiefen Modell der Zeit ; und (b) treibt die weitere Verfeinerung unserer Zeitmodelle voran.  In der Informatik zum Beispiel haben die Entwicklungen in den Bereichen künstliche Intelligenz, Datenbanken, verteilte Systeme usw. in den letzten zwei Jahrzehnten mehrere herausragende theoretische Rahmenwerke hervorgebracht, die sich mit zeitlichen Aspekten befassen. Einige Teile dieser Theorien gaben der Forschung im Bereich der Logik Auftrieb und führten zu einer Familie von temporalen Logiken , die temporale Beschreibungslogiken umfasst. Auf dieser logischen Grundlage haben Wissensrepräsentationssprachen ihre Fähigkeit zur Darstellung von Zeit erhalten, und mehrere Zeit-Ontologien wurden von der Semantic Web-Gemeinschaft implementiert.  Es ist jedoch wichtig, herauszufinden, ob diese Fülle ausreicht, um den Anforderungen der Informatikforschung und -entwicklung gerecht zu werden."""
+
     test_scores, _ = cvalue(nlp(text), use_frequencies=False)
 
     print("C-Value scores:")
     # Print scores in descending order
-    for a_term, a_score in sorted(test_scores.items(), key=lambda x: x[1], reverse=True):
+    for a_term, a_score in sorted(
+        test_scores.items(), key=lambda x: x[1], reverse=True
+    ):
         print(f"{a_term}: {a_score:.3f}")
 
     # test_scores, _ = combo_basic(nlp(text), use_frequencies=False)

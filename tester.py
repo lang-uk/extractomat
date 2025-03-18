@@ -1,9 +1,11 @@
 import argparse
 from pathlib import Path
-from typing import Dict, Set, Tuple
+from typing import Dict, Set, Tuple, List
 import csv
 
 import spacy
+from spacy.tokens import Span
+from spacy_layout import spaCyLayout
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -21,7 +23,7 @@ class TermEvaluator:
         self,
         gt_path: Path,
         term_scores: Dict[str, float],
-        term_occurrences: Dict[str, Set[str]],
+        term_occurrences: Dict[str, List[Span]],
         filter_single_word: bool = True,
     ):
         """
@@ -32,7 +34,10 @@ class TermEvaluator:
             filter_single_word: Whether to filter out single-word terms from GT
         """
         self.term_scores = term_scores
-        self.term_occurrences = term_occurrences
+        self.term_occurrences = {
+            lemma: set(term.text.lower() for term in terms)
+            for lemma, terms in term_occurrences.items()
+        }
         self.gt_terms = self._load_gt_terms(gt_path, filter_single_word)
 
     def _load_gt_terms(self, path: Path, filter_single_word: bool) -> Set[str]:
@@ -43,6 +48,9 @@ class TermEvaluator:
             for row in reader:
                 if row and row[0].strip():  # Skip empty lines
                     term = row[0].strip().lower()  # Case-insensitive matching
+                    if term.startswith("//"):  # Skip comments
+                        continue
+
                     if not filter_single_word or len(term.split()) > 1:
                         terms.add(term)
         return terms
@@ -79,7 +87,9 @@ class TermEvaluator:
         """
         # Filter terms by threshold
         filtered_terms = {
-            term: score for term, score in self.term_scores.items() if score >= threshold
+            term: score
+            for term, score in self.term_scores.items()
+            if score >= threshold
         }
 
         if not filtered_terms:
@@ -139,7 +149,9 @@ class TermEvaluator:
         precisions, recalls, f1_scores = zip(*metrics)
 
         # Create figure with two subplots sharing x-axis
-        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8), height_ratios=[3, 1], sharex=True)
+        fig, (ax1, ax2) = plt.subplots(
+            2, 1, figsize=(10, 8), height_ratios=[3, 1], sharex=True
+        )
         fig.subplots_adjust(hspace=0.1)  # Reduce space between plots
 
         # Plot F1 curves on top subplot
@@ -236,16 +248,21 @@ def mimic_term_scores(terms):
 
 
 if __name__ == "__main__":
-    text = """Ontologies of Time: Review and Trends
-    Time, as a phenomenon, has been in the focus of scientific thought from ancient times. It continues to be an important subject of research in many disciplines due to its importance as a basic aspect for understanding and formally representing change. The goal of this analytical review is to find out if the formal representations of time developed to date suffice to the needs of the basic and applied research in Computer Science, and in particular within the Artificial Intelligence and Semantic Web communities. To analyze if the existing basic theories, models, and implemented ontologies of time cover these needs well, the set of the features of time has been extracted and appropriately structured using the paper collection of the TIME Symposia series as the document corpus. This feature set further helped to structure the comparative review and analysis of the most prominent temporal theories. As a result, the selection of the subset of the features of time (the requirements for a Synthetic Theory) has been made reflecting the TIME community sentiment.  Further, the temporal logics, representation languages, and ontologies available to date, have been reviewed regarding their usability aspects and the coverage of the selected temporal features. The results reveal that the reviewed ontologies of time taken together do not satisfactorily cover some important features: (i) density; (ii) relaxed linearity; (iii) scale factors; (iv) proper and periodic subintervals; (v) temporal measures and clocks.  It has been concluded that a cross-disciplinary effort is required to address the features not covered by the existing ontologies of time, and also harmonize the representations addressed differently.   
-    Keywords: Time; sentiment; temporal feature; coverage; ontology; representation; reasoning.
-    Introduction
-    It is acknowledged that “when God made time, he made plenty of it”. Remarkably, when it goes about the formal treatment of time, the status is very much following this Irish saying.  Time, as a phenomenon, has been in the focus of scientific thought from ancient times. Today it continues to be an important subject of research for philosophers, physicists, mathematicians, logicians, computer scientists, and even biologists. One reason, perhaps, is that time is a fundamental aspect to understand and react to change in the World, including the broadest diversity of applications that impact the evolution of the Humankind. So, the progress in understanding the World in its dynamics: (a) is based on having an adequately rich and deep model of time; and (b) pushes forward the further refinement of our time models.  For example, in Computer Science the developments in Artificial Intelligence, Databases, Distributed Systems, etc. in the last two decades have brought to life several prominent theoretical frameworks dealing with temporal aspects. Some parts of these theories gave boost to the research in logics – yielding a family of temporal logics, comprising temporal description logics. Based on this logical foundation, knowledge representation languages have received their capability to represent time, and several ontologies of time have been implemented by the Semantic Web community.  It is however important to find out if this plenty is enough to meet the requirement in Computer Science research and development.
-    The objective of this analytic review paper is to answer this question – i.e. to find out if the formal representations of time developed to date suffice to the needs of coping with different aspects of change. The remainder of the paper is structured as follows. 
-    """.lower()
+    # text = """Ontologies of Time: Review and Trends
+    # Time, as a phenomenon, has been in the focus of scientific thought from ancient times. It continues to be an important subject of research in many disciplines due to its importance as a basic aspect for understanding and formally representing change. The goal of this analytical review is to find out if the formal representations of time developed to date suffice to the needs of the basic and applied research in Computer Science, and in particular within the Artificial Intelligence and Semantic Web communities. To analyze if the existing basic theories, models, and implemented ontologies of time cover these needs well, the set of the features of time has been extracted and appropriately structured using the paper collection of the TIME Symposia series as the document corpus. This feature set further helped to structure the comparative review and analysis of the most prominent temporal theories. As a result, the selection of the subset of the features of time (the requirements for a Synthetic Theory) has been made reflecting the TIME community sentiment.  Further, the temporal logics, representation languages, and ontologies available to date, have been reviewed regarding their usability aspects and the coverage of the selected temporal features. The results reveal that the reviewed ontologies of time taken together do not satisfactorily cover some important features: (i) density; (ii) relaxed linearity; (iii) scale factors; (iv) proper and periodic subintervals; (v) temporal measures and clocks.  It has been concluded that a cross-disciplinary effort is required to address the features not covered by the existing ontologies of time, and also harmonize the representations addressed differently.
+    # Keywords: Time; sentiment; temporal feature; coverage; ontology; representation; reasoning.
+    # Introduction
+    # It is acknowledged that “when God made time, he made plenty of it”. Remarkably, when it goes about the formal treatment of time, the status is very much following this Irish saying.  Time, as a phenomenon, has been in the focus of scientific thought from ancient times. Today it continues to be an important subject of research for philosophers, physicists, mathematicians, logicians, computer scientists, and even biologists. One reason, perhaps, is that time is a fundamental aspect to understand and react to change in the World, including the broadest diversity of applications that impact the evolution of the Humankind. So, the progress in understanding the World in its dynamics: (a) is based on having an adequately rich and deep model of time; and (b) pushes forward the further refinement of our time models.  For example, in Computer Science the developments in Artificial Intelligence, Databases, Distributed Systems, etc. in the last two decades have brought to life several prominent theoretical frameworks dealing with temporal aspects. Some parts of these theories gave boost to the research in logics – yielding a family of temporal logics, comprising temporal description logics. Based on this logical foundation, knowledge representation languages have received their capability to represent time, and several ontologies of time have been implemented by the Semantic Web community.  It is however important to find out if this plenty is enough to meet the requirement in Computer Science research and development.
+    # The objective of this analytic review paper is to answer this question – i.e. to find out if the formal representations of time developed to date suffice to the needs of coping with different aspects of change. The remainder of the paper is structured as follows.
+    # """.lower()
 
-    parser = argparse.ArgumentParser(description="Evaluate term extraction against ground truth")
-    parser.add_argument("gt_path", type=Path, help="Path to ground truth CSV file with terms")
+    parser = argparse.ArgumentParser(
+        description="Evaluate term extraction against ground truth"
+    )
+    parser.add_argument("text", type=Path, help="Path to text file (doc, pdf, txt)")
+    parser.add_argument(
+        "gt_path", type=Path, help="Path to ground truth CSV file with terms"
+    )
     parser.add_argument("output_path", type=Path, help="Path to save the F1 curve plot")
     parser.add_argument(
         "--method",
@@ -264,18 +281,27 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     nlp = spacy.load(args.model, disable=["parser", "entity"])
+    layout = spaCyLayout(nlp)
+    raw_doc = layout(args.text)
+    tagged_doc = nlp(raw_doc.text.lower())
 
     n_min = 1 if args.allow_single_word else 2
 
     if args.method == "basic":
-        term_scores, term_occurrences = basic(nlp(text), n_min=n_min)
+        term_scores, term_occurrences = basic(tagged_doc, n_min=n_min)
     elif args.method == "cvalue":
         smoothing = 1 if args.allow_single_word else 0.1
-        term_scores, term_occurrences = cvalue(nlp(text), n_min=n_min, smoothing=smoothing, n_max=8)
+        term_scores, term_occurrences = cvalue(
+            tagged_doc, n_min=n_min, smoothing=smoothing, n_max=8
+        )
     elif args.method == "combo_basic":
-        term_scores, term_occurrences = combo_basic(nlp(text), n_min=n_min)
+        term_scores, term_occurrences = combo_basic(tagged_doc, n_min=n_min)
     else:
         raise ValueError(f"Invalid method: {args.method}")
+
+    if not term_scores:
+        print("No terms extracted")
+        exit()
 
     terms_max_score = max(term_scores.values())
     terms_min_score = min(term_scores.values())
@@ -287,7 +313,7 @@ if __name__ == "__main__":
         filter_single_word=not args.allow_single_word,
     )
 
-    # print(evaluator.calculate_metrics(0.0, verbose=True))
+    print(evaluator.calculate_metrics(0.0, verbose=True))
 
     evaluator.plot_f1_curve(
         min_threshold=terms_min_score,
