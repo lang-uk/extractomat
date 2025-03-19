@@ -15,6 +15,8 @@ from matcha import (
     cvalue,
 )
 
+from sbert_reranker import SentenceSimilarityCalculator
+
 
 class TermEvaluator:
     """Evaluates term extraction against ground truth."""
@@ -267,7 +269,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--method",
         type=str,
-        choices=["basic", "cvalue", "combo_basic"],
+        choices=["basic", "cvalue", "combo_basic", "rerank"],
         default="basic",
         help="Term extraction method to evaluate",
     )
@@ -280,7 +282,8 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    nlp = spacy.load(args.model, disable=["parser", "entity"])
+    # nlp = spacy.load(args.model, disable=["parser", "entity"])
+    nlp = spacy.load(args.model, disable=["entity",])
     layout = spaCyLayout(nlp)
     raw_doc = layout(args.text)
     tagged_doc = nlp(raw_doc.text.lower())
@@ -289,11 +292,22 @@ if __name__ == "__main__":
 
     if args.method == "basic":
         term_scores, term_occurrences = basic(tagged_doc, n_min=n_min)
-    elif args.method == "cvalue":
+    elif args.method in ["cvalue", "rerank"]:
         smoothing = 1 if args.allow_single_word else 0.1
         term_scores, term_occurrences = cvalue(
             tagged_doc, n_min=n_min, smoothing=smoothing, n_max=8
         )
+
+        if args.method == "rerank":
+            reranker = SentenceSimilarityCalculator(
+                model_name="sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
+            )
+
+            term_scores = reranker.rerank_terms_in_doc(
+                tagged_doc, term_occurrences, context_len=3, pooling="max"
+            )
+            print(term_scores)
+
     elif args.method == "combo_basic":
         term_scores, term_occurrences = combo_basic(tagged_doc, n_min=n_min)
     else:
