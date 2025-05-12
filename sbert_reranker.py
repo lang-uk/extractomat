@@ -51,14 +51,25 @@ class SentenceSimilarityCalculator:
         return self.model.encode(text_str, show_progress_bar=False)
 
     def calculate_similarity(
-        self, context_sentences: List[Union[str, Doc, Span]], target_span: Span
+        self,
+        context_sentences: List[Union[str, Doc, Span]],
+        target_span: Span,
+        length_adjust: bool = True,
+        length_factor: float = 0.2,
+        min_tokens: int = 3,
+        max_boost: float = 0.5,
     ) -> float:
         """
-        Calculate cosine similarity between concatenated context sentences and the target span.
+        Calculate cosine similarity between concatenated context sentences and the target span,
+        with optional non-linear adjustment for shorter spans.
 
         Args:
             context_sentences: List of sentences to concatenate and compare against (as strings or spaCy objects)
             target_span: spaCy Span to compare with the concatenated context
+            length_adjust: Whether to apply length adjustment to boost scores for shorter spans
+            length_factor: Controls the strength of the length adjustment (higher = more adjustment)
+            min_tokens: Minimum number of tokens that can receive adjustment
+            max_boost: Maximum boost that can be applied to the similarity score
 
         Returns:
             Similarity score between the concatenated context and target span
@@ -83,10 +94,20 @@ class SentenceSimilarityCalculator:
         target_embedding = self.get_embedding(target_span)
 
         # Calculate cosine similarity using sentence_transformers util
-        similarity = util.cos_sim(context_embedding, target_embedding).item()
-        # print(target_span, ":", concatenated_context[:50], similarity)
+        base_similarity = util.cos_sim(context_embedding, target_embedding).item()
 
-        return similarity
+        # Apply non-linear adjustment for short spans if requested
+        if length_adjust and len(target_span) <= min_tokens:
+            # Calculate a boosting factor based on span length
+            # The shorter the span, the more boost (with diminishing returns)
+            token_count = len(target_span)
+            length_boost = max_boost * np.exp(-length_factor * token_count)
+
+            # Apply the boost, ensuring we don't exceed 1.0
+            adjusted_similarity = min(1.0, base_similarity + length_boost)
+            return adjusted_similarity
+
+        return base_similarity
 
     def rerank_terms_in_doc(
         self,
@@ -118,7 +139,9 @@ class SentenceSimilarityCalculator:
             term_score = []
             for context, span in occurences:
                 term_score.append(
-                    self.calculate_similarity(context_sentences=context, target_span=span)
+                    self.calculate_similarity(
+                        context_sentences=context, target_span=span
+                    )
                 )
 
             if pooling == "max":

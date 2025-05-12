@@ -26,7 +26,9 @@ class TermEvaluator:
         gt_path: Path,
         term_scores: Dict[str, float],
         term_occurrences: Dict[str, List[Span]],
+        method: str = "basic",
         filter_single_word: bool = True,
+        language: str = "en"
     ):
         """
         Args:
@@ -34,13 +36,17 @@ class TermEvaluator:
             term_scores: Mapping of lemmatized terms to their scores
             term_occurrences: Mapping of lemmatized terms to their occurrences
             filter_single_word: Whether to filter out single-word terms from GT
+            method: Method used for term extraction (for naming purposes)
+            language: Language of the text (for naming purposes)
         """
         self.term_scores = term_scores
+        self.method = method
         self.term_occurrences = {
             lemma: set(term.text.lower() for term in terms)
             for lemma, terms in term_occurrences.items()
         }
         self.gt_terms = self._load_gt_terms(gt_path, filter_single_word)
+        self.language = language
 
     def _load_gt_terms(self, path: Path, filter_single_word: bool) -> Set[str]:
         """Load ground truth terms from CSV."""
@@ -89,10 +95,14 @@ class TermEvaluator:
         """
         # Filter terms by threshold
         filtered_terms = {
-            term: score
-            for term, score in self.term_scores.items()
+            lemma: score
+            for lemma, score in self.term_scores.items()
             if score >= threshold
         }
+
+        occurences = set()
+        for lemma in filtered_terms:
+            occurences.update(self.term_occurrences.get(lemma, set()))
 
         if not filtered_terms:
             return 0.0, 0.0, 0.0
@@ -103,22 +113,21 @@ class TermEvaluator:
         matched_extracted_terms = set()
 
         for gt_term in self.gt_terms:
-            for lemma in filtered_terms:
-                if self._is_term_match(gt_term, lemma):
-                    true_positives += 1
-                    matched_gt_terms.add(gt_term)
-                    matched_extracted_terms.add(lemma)
-                    break
+            if gt_term in occurences:
+                true_positives += 1
+                matched_gt_terms.add(gt_term)
+                matched_extracted_terms.add(gt_term)
 
         if verbose:
             # Print unmatched terms
             unmatched_gt = self.gt_terms - matched_gt_terms
-            unmatched_extracted = set(filtered_terms.keys()) - matched_extracted_terms
+            unmatched_extracted = occurences - matched_extracted_terms
 
             print("Unmatched ground truth terms:", sorted(unmatched_gt))
             print("Unmatched extracted terms:", sorted(unmatched_extracted))
 
-        precision = true_positives / len(filtered_terms)
+        # print(true_positives, len(filtered_terms), len(self.gt_terms))
+        precision = true_positives / len(occurences)
         recall = true_positives / len(self.gt_terms)
 
         if precision + recall == 0:
@@ -134,7 +143,7 @@ class TermEvaluator:
         steps: int = 50,
         n_bins: int = 30,
         output_path: Path = None,
-    ) -> None:
+    ) -> plt.Figure:
         """
         Plot F1 scores over different thresholds with score distribution histogram.
 
@@ -147,6 +156,23 @@ class TermEvaluator:
         """
         thresholds = np.linspace(min_threshold, max_threshold, steps)
         metrics = [self.calculate_metrics(t) for t in thresholds]
+
+        # Save metrics to a CSV file
+        csv_output_path = output_path.with_suffix(".csv")
+        with csv_output_path.open("w", encoding="utf-8") as csv_file:
+            writer = csv.DictWriter(
+                csv_file, fieldnames=["Threshold", "Precision", "Recall", "F1 Score"]
+            )
+            writer.writeheader()
+            for t, (precision, recall, f1_score) in zip(thresholds, metrics):
+                writer.writerow(
+                    {
+                        "Threshold": t,
+                        "Precision": precision,
+                        "Recall": recall,
+                        "F1 Score": f1_score,
+                    }
+                )
 
         precisions, recalls, f1_scores = zip(*metrics)
 
@@ -162,7 +188,7 @@ class TermEvaluator:
         ax1.plot(thresholds, f1_scores, label="F1 Score", linewidth=2)
 
         ax1.set_ylabel("Score")
-        ax1.set_title("Term Extraction Performance vs Threshold")
+        ax1.set_title(f"{self.language} {self.method} ATE Performance vs Threshold")
         ax1.legend()
         ax1.grid(True)
 
@@ -181,7 +207,7 @@ class TermEvaluator:
             textcoords="offset points",
         )
         print(
-            f"Best F1: {best_f1:.3f} (p: {best_precision:.3f} / r: {best_recall:.3f}) at threshold {best_threshold:.3f}"
+            f"{self.language}, {self.method}. Best F1: {best_f1:.3f} (p: {best_precision:.3f} / r: {best_recall:.3f}) at threshold {best_threshold:.3f}"
         )
 
         # Calculate optimal number of bins
@@ -202,7 +228,8 @@ class TermEvaluator:
 
         if output_path:
             plt.savefig(output_path, bbox_inches="tight")
-        plt.show()
+
+        return plt
 
 
 def mimic_term_scores(terms):
@@ -269,7 +296,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--method",
         type=str,
-        choices=["basic", "cvalue", "combo_basic", "rerank"],
+        choices=["basic", "cvalue", "combo_basic", "rerank", "ensemble"],
         default="basic",
         help="Term extraction method to evaluate",
     )
@@ -279,11 +306,17 @@ if __name__ == "__main__":
         default="en_core_web_sm",
     )
     parser.add_argument("--allow-single-word", default=False, action="store_true")
+    parser.add_argument("--verbose", default=False, action="store_true")
 
     args = parser.parse_args()
 
     # nlp = spacy.load(args.model, disable=["parser", "entity"])
-    nlp = spacy.load(args.model, disable=["entity",])
+    nlp = spacy.load(
+        args.model,
+        disable=[
+            "entity",
+        ],
+    )
     layout = spaCyLayout(nlp)
     raw_doc = layout(args.text)
     tagged_doc = nlp(raw_doc.text.lower())
@@ -306,10 +339,68 @@ if __name__ == "__main__":
             term_scores = reranker.rerank_terms_in_doc(
                 tagged_doc, term_occurrences, context_len=3, pooling="max"
             )
-            print(term_scores)
 
     elif args.method == "combo_basic":
         term_scores, term_occurrences = combo_basic(tagged_doc, n_min=n_min)
+    elif args.method == "ensemble":
+        term_scores_basic, term_occurrences = basic(tagged_doc, n_min=n_min)
+        term_scores_combobasic, _ = combo_basic(tagged_doc, n_min=n_min)
+        term_scores_cvalue, _ = cvalue(tagged_doc, n_min=n_min, smoothing=0.1, n_max=8)
+
+        reranker = SentenceSimilarityCalculator(
+            model_name="sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
+        )
+        term_scores_rerank = reranker.rerank_terms_in_doc(
+            tagged_doc, term_occurrences, context_len=3, pooling="max"
+        )
+
+        # combining scores using mean pooling
+        term_scores = {}
+        for term in set(term_scores_basic.keys()).union(
+            term_scores_combobasic.keys(),
+            term_scores_cvalue.keys(),
+            term_scores_rerank.keys(),
+        ):
+            score = +term_scores_cvalue.get(term, 0) * term_scores_rerank.get(term, 0)
+            term_scores[term] = score
+
+        evaluator = TermEvaluator(
+            gt_path=args.gt_path,
+            term_scores=term_scores,
+            term_occurrences=term_occurrences,
+            filter_single_word=not args.allow_single_word,
+        )
+        # Dumping scores into a CSV file
+        with open("/tmp/matrix_uk.csv", "w", encoding="utf-8") as csv_out:
+            writer = csv.DictWriter(
+                csv_out,
+                fieldnames=[
+                    "Term",
+                    "Basic",
+                    "ComboBasic",
+                    "CValue",
+                    "ReRank",
+                    "target",
+                ],
+            )
+            writer.writeheader()
+            for term in term_scores:
+                target = False
+                for gt_term in evaluator.gt_terms:
+                    if evaluator._is_term_match(gt_term, term):
+                        target = True
+                        break
+
+                writer.writerow(
+                    {
+                        "Term": term,
+                        "Basic": term_scores_basic.get(term, 0),
+                        "ComboBasic": term_scores_combobasic.get(term, 0),
+                        "CValue": term_scores_cvalue.get(term, 0),
+                        "ReRank": term_scores_rerank.get(term, 0),
+                        "target": int(target),
+                    }
+                )
     else:
         raise ValueError(f"Invalid method: {args.method}")
 
@@ -325,14 +416,20 @@ if __name__ == "__main__":
         term_scores=term_scores,
         term_occurrences=term_occurrences,
         filter_single_word=not args.allow_single_word,
+        method=args.method,
+        language=nlp.lang
     )
+    if args.verbose:
+        print(f"Loaded {len(evaluator.gt_terms)} ground truth terms from {args.gt_path}")
+        print(evaluator.calculate_metrics(0.0, verbose=True))
 
-    print(evaluator.calculate_metrics(0.0, verbose=True))
-
-    evaluator.plot_f1_curve(
+    fig = evaluator.plot_f1_curve(
         min_threshold=terms_min_score,
         max_threshold=terms_max_score,
         steps=min(len(term_scores), 50),
         output_path=args.output_path,
         n_bins=None,
     )
+
+    if args.verbose:
+        plt.show()

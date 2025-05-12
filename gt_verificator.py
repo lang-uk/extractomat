@@ -1,46 +1,111 @@
 import csv
+import argparse
+from pathlib import Path
 from matcha import ngrams
-from collections import OrderedDict
+from collections import OrderedDict, Counter
 from Levenshtein import jaro
 import spacy
+from spacy_layout import spaCyLayout
 
 if __name__ == "__main__":
-    nlp = spacy.load("en_core_web_sm")
-
-    text = nlp(
-        """Ontologies of Time: Review and Trends
-        Time, as a phenomenon, has been in the focus of scientific thought from ancient times. It continues to be an important subject of research in many disciplines due to its importance as a basic aspect for understanding and formally representing change. The goal of this analytical review is to find out if the formal representations of time developed to date suffice to the needs of the basic and applied research in Computer Science, and in particular within the Artificial Intelligence and Semantic Web communities. To analyze if the existing basic theories, models, and implemented ontologies of time cover these needs well, the set of the features of time has been extracted and appropriately structured using the paper collection of the TIME Symposia series as the document corpus. This feature set further helped to structure the comparative review and analysis of the most prominent temporal theories. As a result, the selection of the subset of the features of time (the requirements for a Synthetic Theory) has been made reflecting the TIME community sentiment.  Further, the temporal logics, representation languages, and ontologies available to date, have been reviewed regarding their usability aspects and the coverage of the selected temporal features. The results reveal that the reviewed ontologies of time taken together do not satisfactorily cover some important features: (i) density; (ii) relaxed linearity; (iii) scale factors; (iv) proper and periodic subintervals; (v) temporal measures and clocks.  It has been concluded that a cross-disciplinary effort is required to address the features not covered by the existing ontologies of time, and also harmonize the representations addressed differently.   
-        Keywords: Time; sentiment; temporal feature; coverage; ontology; representation; reasoning.
-        Introduction
-        It is acknowledged that “when God made time, he made plenty of it”. Remarkably, when it goes about the formal treatment of time, the status is very much following this Irish saying.  Time, as a phenomenon, has been in the focus of scientific thought from ancient times. Today it continues to be an important subject of research for philosophers, physicists, mathematicians, logicians, computer scientists, and even biologists. One reason, perhaps, is that time is a fundamental aspect to understand and react to change in the World, including the broadest diversity of applications that impact the evolution of the Humankind. So, the progress in understanding the World in its dynamics: (a) is based on having an adequately rich and deep model of time; and (b) pushes forward the further refinement of our time models.  For example, in Computer Science the developments in Artificial Intelligence, Databases, Distributed Systems, etc. in the last two decades have brought to life several prominent theoretical frameworks dealing with temporal aspects. Some parts of these theories gave boost to the research in logics – yielding a family of temporal logics, comprising temporal description logics. Based on this logical foundation, knowledge representation languages have received their capability to represent time, and several ontologies of time have been implemented by the Semantic Web community.  It is however important to find out if this plenty is enough to meet the requirement in Computer Science research and development.
-        The objective of this analytic review paper is to answer this question – i.e. to find out if the formal representations of time developed to date suffice to the needs of coping with different aspects of change. The remainder of the paper is structured as follows. 
-        """
+    parser = argparse.ArgumentParser(description="Verify GT terms")
+    parser.add_argument("text", type=Path, help="Path to text file (doc, pdf, txt)")
+    parser.add_argument(
+        "gt_path", type=Path, help="Path to ground truth CSV file with terms"
     )
+    parser.add_argument("output_path", type=Path, help="Path to save the F1 curve plot")
+    parser.add_argument(
+        "--model",
+        type=str,
+        default="en_core_web_sm",
+        help="Spacy model to use for tokenization and lemmatization",
+    )
+    parser.add_argument(
+        "--full_gt_dataset",
+        type=Path,
+        help="Store all the found terms with repetitions in the order they were found",
+    )
+
+    args = parser.parse_args()
+
+    nlp = spacy.load(args.model)
+    layout = spaCyLayout(nlp)
+    raw_doc = layout(args.text)
+
+    text = nlp(raw_doc.text.lower())
+    lengths = Counter()
 
     terms_arr = []
     max_len = 0
-    with open("gt_terms_v2.csv", "r", encoding="utf-8") as f:
+    with args.gt_path.open("r", encoding="utf-8") as f:
         reader = csv.reader(f)
         for row in reader:
             if row and row[0].strip():  # Skip empty lines
                 term = row[0].strip().lower()  # Case-insensitive matching
                 terms_arr.append(term)
+                lengths.update([term.count(" ") + 1])
                 max_len = max(max_len, term.count(" ") + 1)
 
     terms_best_match = OrderedDict((term, 0) for term in terms_arr)
+    terms_best_counterpart = OrderedDict((term, "") for term in terms_arr)
+
+    print("Lengths of terms:")
+    for length, count in lengths.most_common():
+        print(f"Length {length}: {count} terms")
 
     print(f"max_len is {max_len}")
-    for phrase in ngrams(text, n_min=1, n_max=max_len):
-        phrase_str = (" ".join(tok.text for tok in phrase)).lower().replace(" - ", "-")
-        phrase_lemma_str = (" ".join(tok.lemma_ for tok in phrase)).lower().replace(" - ", "-")
 
-        for term in terms_arr:
-            terms_best_match[term] = max(
-                terms_best_match[term], jaro(phrase_str, term), jaro(phrase_lemma_str, term)
+    with args.full_gt_dataset.open("w", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        matches_in_text = list()
+
+        for phrase in ngrams(text, n_min=1, n_max=max_len):
+            phrase_str = (
+                (" ".join(tok.text for tok in phrase)).lower().replace(" - ", "-")
+            )
+            phrase_lemma_str = (
+                (" ".join(tok.lemma_ for tok in phrase)).lower().replace(" - ", "-")
             )
 
-    with open("gt_terms.csv", "w", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=["term", "score"])
+            for term in terms_arr:
+                score_orig = jaro(phrase_str, term)
+                score_lemma = jaro(phrase_lemma_str, term)
+
+                if score_orig > terms_best_match[term]:
+                    terms_best_match[term] = score_orig
+                    terms_best_counterpart[term] = phrase_str
+
+                if score_orig == 1.0:
+                    writer.writerow([term])
+                    matches_in_text.append(term)
+                    break
+
+                # if score_lemma > terms_best_match[term]:
+                #     terms_best_match[term] = score_lemma
+                #     terms_best_counterpart[term] = phrase_lemma_str
+
+    exact_matches = 0
+    partial_matches = 0
+    em = []
+    with args.output_path.open("w", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=["term", "score", "counterpart"])
         writer.writeheader()
         for term, score in terms_best_match.items():
-            writer.writerow({"term": term, "score": score})
+            if score == 1.0:
+                exact_matches += 1
+                em.append(term)
+            else:
+                print(term, score)
+                partial_matches += 1
+            writer.writerow(
+                {
+                    "term": term,
+                    "score": score,
+                    "counterpart": terms_best_counterpart.get(term, ""),
+                }
+            )
+
+    print(f"Exact matches: {exact_matches}")
+    print(f"Partial matches: {partial_matches}")
+    print(f"Matches in text: {len(matches_in_text)}")
+    print(f"Total matches: {exact_matches + partial_matches}, {len(terms_arr)} terms")

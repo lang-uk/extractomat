@@ -234,35 +234,35 @@ def is_phrase_matching(phrase: Span, allow_single_word: bool = False) -> bool:
         if SECRET_REGEX_FOR_ONE_WORD.match(phrase_fingerprint):
             return True
 
-    if phrase.text.lower() in [
-        "applied research",
-        "basic and applied research",
-        "comparative review and analysis",
-        "computer science research and development",
-        "distributed systems",
-        "god",
-        "most prominent temporal theory",
-        "progress in understanding the world",
-        "rich and deep model of time",
-        "set of the features of time",
-        "subset of the features of time",
-        "understanding",
-        # Ukrainian:
-        "фундаментальних і прикладних досліджень",
-        "semantic web",
-        "time",
-        "адекватно насиченої і глибокої моделі часу",
-        "насиченої і глибокої моделі часу",
-        "порівняльний огляд та аналіз",
-        "сентимент спільноти time",
-        "серії симпозіумів time",
-        "спільнот семантичного вебу",
-        "спільнота semantic web",
-        "спільноти time",
-        "фундаментальних і прикладних досліджень",
-        "synthetische theorie",
-    ]:
-        print(phrase.text, phrase_fingerprint)
+    # if phrase.text.lower() in [
+    #     "applied research",
+    #     "basic and applied research",
+    #     "comparative review and analysis",
+    #     "computer science research and development",
+    #     "distributed systems",
+    #     "god",
+    #     "most prominent temporal theory",
+    #     "progress in understanding the world",
+    #     "rich and deep model of time",
+    #     "set of the features of time",
+    #     "subset of the features of time",
+    #     "understanding",
+    #     # Ukrainian:
+    #     "фундаментальних і прикладних досліджень",
+    #     "semantic web",
+    #     "time",
+    #     "адекватно насиченої і глибокої моделі часу",
+    #     "насиченої і глибокої моделі часу",
+    #     "порівняльний огляд та аналіз",
+    #     "сентимент спільноти time",
+    #     "серії симпозіумів time",
+    #     "спільнот семантичного вебу",
+    #     "спільнота semantic web",
+    #     "спільноти time",
+    #     "фундаментальних і прикладних досліджень",
+    #     "synthetische theorie",
+    # ]:
+    #     print(phrase.text, phrase_fingerprint)
 
     # if phrase.text.lower().startswith("implemented "):
     #     print(phrase.text, phrase_fingerprint, get_lemmatized_phrase(phrase))
@@ -601,7 +601,7 @@ def cvalue(
     table_data.sort(key=lambda x: float(x[-1]), reverse=True)
 
     # Print formatted table
-    print(tabulate(table_data, headers=headers, floatfmt=".3f", tablefmt="grid"))
+    # print(tabulate(table_data, headers=headers, floatfmt=".3f", tablefmt="grid"))
     with open("/tmp/cvalue.tsv", "w", encoding="utf-8") as f:
         f.write(doc.text + "\n")
         f.write(tabulate(table_data, headers=headers, floatfmt=".3f", tablefmt="tsv"))
@@ -638,11 +638,12 @@ if __name__ == "__main__":  # pragma: no cover
 дескриптивні логіки часу. На основі цього логічного фундаменту мови подання знань отримали можливість репрезентувати час, а 
 спільнота Semantic Web реалізувала кілька онтологій часу.  Однак важливо з'ясувати, чи достатньо цього багатства, щоб задовольнити вимоги в дослідженнях і розробках в галузі комп'ютерних наук."""
 
-    text = """Ontologien der Zeit: Rückblick und Trends
-Die Zeit als Phänomen steht seit der Antike im Mittelpunkt des wissenschaftlichen Denkens. Sie ist nach wie vor ein wichtiger Forschungsgegenstand in vielen Disziplinen, da sie ein grundlegender Aspekt für das Verständnis und die formale Darstellung von Veränderungen ist. Das Ziel dieses analytischen Überblicks ist es, herauszufinden, ob die bisher entwickelten formalen Darstellungen der Zeit den Bedürfnissen der Grundlagen- und angewandten Forschung in der Informatik und insbesondere innerhalb der Artificial Intelligence und Semantic Web Communities genügen. Um zu analysieren, ob die existierenden grundlegenden Theorien, Modelle und implementierten Ontologien der Zeit diese Bedürfnisse gut abdecken, wurde die Menge der Merkmale der Zeit extrahiert und angemessen strukturiert, indem die Papiersammlung der TIME Symposienreihe als Dokumentenkorpus verwendet wurde. Dieses Merkmalsset half weiter, die vergleichende Überprüfung und Analyse der prominentesten Zeittheorien zu strukturieren. Infolgedessen wurde die Auswahl der Teilmenge der Zeitmerkmale (die Anforderungen an eine Synthetische Theorie) unter Berücksichtigung der Meinung der TIME-Gemeinschaft getroffen.  Des Weiteren wurden die bisher verfügbaren temporalen Logiken, Repräsentationssprachen und Ontologien hinsichtlich ihrer Benutzerfreundlichkeit und der Abdeckung der ausgewählten temporalen Merkmale untersucht. Die Ergebnisse zeigen, dass die untersuchten Ontologien der Zeit zusammengenommen einige wichtige Merkmale nicht zufriedenstellend abdecken: (i) Dichte; (ii) entspannte Linearität; (iii) Skalenfaktoren; (iv) proper and periodic subintervals ; (v) temporale Maße und Uhren.  Man ist zu dem Schluss gekommen, dass eine disziplinübergreifende Anstrengung erforderlich ist, um die von den bestehenden Ontologien der Zeit nicht abgedeckten Merkmale zu behandeln und auch die unterschiedlich behandelten Darstellungen zu harmonisieren.   
+    text = """Ontologien der Zeit: Übersicht und Trends
+Die Zeit als Phänomen steht seit der Antike im Mittelpunkt des wissenschaftlichen Denkens. Sie ist nach wie vor ein wichtiger Forschungsgegenstand in vielen Disziplinen, da sie ein grundlegender Aspekt für das Verständnis und die formale Darstellung von Veränderungen ist. Das Ziel dieses analytischen Überblicks ist es, herauszufinden, ob die bisher entwickelten formalen Darstellungen der Zeit den Bedürfnissen der Grundlagen- und angewandten Forschung in der Informatik und insbesondere innerhalb der Artificial Intelligence und Semantic Web Communities genügen. Um zu analysieren, ob die existierenden grundlegenden Theorien, Modelle und implementierten Ontologien der Zeit diese Bedürfnisse gut abdecken, wurde die Menge der Merkmale der Zeit extrahiert und angemessen strukturiert, indem die Papiersammlung der TIME Symposienreihe als Dokumentenkorpus verwendet wurde. Dieses Merkmalsset half weiter, die vergleichende Überprüfung und Analyse der prominentesten Zeittheorien zu strukturieren. Infolgedessen wurde die Auswahl der Teilmenge der Zeitmerkmale (die Anforderungen an eine Synthetische Theorie) unter Berücksichtigung der Meinung der TIME-Gemeinschaft getroffen.  Des Weiteren wurden die bisher verfügbaren temporalen Logiken, Repräsentationssprachen und Ontologien hinsichtlich ihrer Benutzerfreundlichkeit und der Abdeckung der ausgewählten temporalen Merkmale untersucht. Die Ergebnisse zeigen, dass die untersuchten Ontologien der Zeit zusammengenommen einige wichtige Merkmale nicht zufriedenstellend abdecken: (i) Dichte; (ii) entspannte Linearität; (iii) Skalenfaktoren; (iv) ordentliche und periodische Subintervalle ; (v) temporale Maße und Uhren.  Man ist zu dem Schluss gekommen, dass eine disziplinübergreifende Anstrengung erforderlich ist, um die von den bestehenden Ontologien der Zeit nicht abgedeckten Merkmale zu behandeln und auch die unterschiedlich behandelten Darstellungen zu harmonisieren.   
 Schlüsselwörter: Zeit; Stimmung; zeitliches Merkmal; Abdeckung; Ontologie; Darstellung; Schlussfolgerungen.
+
 Einführung
-Es ist bekannt, dass "als Gott die Zeit schuf, er reichlich von ihr schuf". Bemerkenswerterweise folgt der Status, wenn es um die formale Behandlung der Zeit geht, sehr stark diesem irischen Sprichwort.  Die Zeit als Phänomen steht seit der Antike im Mittelpunkt des wissenschaftlichen Denkens. Auch heute noch ist sie ein wichtiger Forschungsgegenstand für Philosophen, Physiker, Mathematiker, Logiker, Informatiker und sogar Biologen. Ein Grund dafür ist vielleicht, dass die Zeit ein grundlegender Aspekt ist, um Veränderungen in der Welt zu verstehen und darauf zu reagieren, einschließlich der unterschiedlichsten Anwendungen, die sich auf die Entwicklung der Menschheit auswirken. Der Fortschritt beim Verständnis der Welt in ihrer Dynamik basiert also (a) auf einem ausreichend reichhaltigen und tiefen Modell der Zeit ; und (b) treibt die weitere Verfeinerung unserer Zeitmodelle voran.  In der Informatik zum Beispiel haben die Entwicklungen in den Bereichen künstliche Intelligenz, Datenbanken, verteilte Systeme usw. in den letzten zwei Jahrzehnten mehrere herausragende theoretische Rahmenwerke hervorgebracht, die sich mit zeitlichen Aspekten befassen. Einige Teile dieser Theorien gaben der Forschung im Bereich der Logik Auftrieb und führten zu einer Familie von temporalen Logiken , die temporale Beschreibungslogiken umfasst. Auf dieser logischen Grundlage haben Wissensrepräsentationssprachen ihre Fähigkeit zur Darstellung von Zeit erhalten, und mehrere Zeit-Ontologien wurden von der Semantic Web-Gemeinschaft implementiert.  Es ist jedoch wichtig, herauszufinden, ob diese Fülle ausreicht, um den Anforderungen der Informatikforschung und -entwicklung gerecht zu werden."""
+Es ist bekannt, dass "als Gott die Zeit schuf, schuf er reichlich von ihr". Bemerkenswerterweise folgt der Status, wenn es um die formale Behandlung der Zeit geht, sehr stark diesem irischen Sprichwort.  Die Zeit als Phänomen steht seit der Antike im Mittelpunkt des wissenschaftlichen Denkens. Auch heute noch ist sie ein wichtiger Forschungsgegenstand für Philosophen, Physiker, Mathematiker, Logiker, Informatiker und sogar Biologen. Ein Grund dafür ist vielleicht, dass die Zeit ein grundlegender Aspekt ist, um Veränderungen in der Welt zu verstehen und darauf zu reagieren, einschließlich der unterschiedlichsten Anwendungen, die sich auf die Entwicklung der Menschheit auswirken. Der Fortschritt beim Verständnis der Welt in ihrer Dynamik basiert also (a) auf einem ausreichend reichhaltigen und tiefen Modell der Zeit; und (b) treibt die weitere Verfeinerung unserer Zeitmodelle voran.  In der Informatik zum Beispiel haben die Entwicklungen in den Bereichen künstliche Intelligenz, Datenbanken, verteilte Systeme usw. in den letzten zwei Jahrzehnten mehrere herausragende theoretische Rahmenwerke hervorgebracht, die sich mit zeitlichen Aspekten befassen. Einige Teile dieser Theorien gaben der Forschung im Bereich der Logik Auftrieb und führten zu einer Familie von temporalen Logiken , die temporale Beschreibungslogiken umfasst. Auf dieser logischen Grundlage haben Wissensrepräsentationssprachen ihre Fähigkeit zur Darstellung von Zeit erhalten, und mehrere Zeit-Ontologien wurden von der Semantic Web-Gemeinschaft implementiert.  Es ist jedoch wichtig, herauszufinden, ob diese Fülle ausreicht, um den Anforderungen der Informatikforschung und -entwicklung gerecht zu werden."""
 
     test_scores, _ = cvalue(nlp(text), use_frequencies=False)
 
