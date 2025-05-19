@@ -1,4 +1,6 @@
 import argparse
+import json
+from collections import defaultdict
 from pathlib import Path
 from typing import Dict, Set, Tuple, List
 import csv
@@ -28,7 +30,7 @@ class TermEvaluator:
         term_occurrences: Dict[str, List[Span]],
         method: str = "basic",
         filter_single_word: bool = True,
-        language: str = "en"
+        language: str = "en",
     ):
         """
         Args:
@@ -301,6 +303,12 @@ if __name__ == "__main__":
         help="Term extraction method to evaluate",
     )
     parser.add_argument(
+        "--rerank_score_adjustment",
+        type=str,
+        choices=["none", "modified_z_score", "median", "legacy"],
+        default="modified_z_score",
+    )
+    parser.add_argument(
         "--model",
         type=str,
         default="en_core_web_sm",
@@ -318,8 +326,11 @@ if __name__ == "__main__":
         ],
     )
     layout = spaCyLayout(nlp)
-    raw_doc = layout(args.text)
-    tagged_doc = nlp(raw_doc.text.lower())
+    if args.text.suffix == ".txt":
+        tagged_doc = nlp(args.text.read_text(encoding="utf-8"))
+    else:
+        raw_doc = layout(args.text)
+        tagged_doc = nlp(raw_doc.text.lower())
 
     n_min = 1 if args.allow_single_word else 2
 
@@ -328,7 +339,7 @@ if __name__ == "__main__":
     elif args.method in ["cvalue", "rerank"]:
         smoothing = 1 if args.allow_single_word else 0.1
         term_scores, term_occurrences = cvalue(
-            tagged_doc, n_min=n_min, smoothing=smoothing, n_max=8
+            tagged_doc, n_min=n_min, smoothing=smoothing, n_max=4
         )
 
         if args.method == "rerank":
@@ -337,70 +348,15 @@ if __name__ == "__main__":
             )
 
             term_scores = reranker.rerank_terms_in_doc(
-                tagged_doc, term_occurrences, context_len=3, pooling="max"
+                tagged_doc,
+                term_occurrences,
+                context_len=3,
+                pooling="max",
+                length_adjustment=args.rerank_score_adjustment,
             )
 
     elif args.method == "combo_basic":
         term_scores, term_occurrences = combo_basic(tagged_doc, n_min=n_min)
-    elif args.method == "ensemble":
-        term_scores_basic, term_occurrences = basic(tagged_doc, n_min=n_min)
-        term_scores_combobasic, _ = combo_basic(tagged_doc, n_min=n_min)
-        term_scores_cvalue, _ = cvalue(tagged_doc, n_min=n_min, smoothing=0.1, n_max=8)
-
-        reranker = SentenceSimilarityCalculator(
-            model_name="sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
-        )
-        term_scores_rerank = reranker.rerank_terms_in_doc(
-            tagged_doc, term_occurrences, context_len=3, pooling="max"
-        )
-
-        # combining scores using mean pooling
-        term_scores = {}
-        for term in set(term_scores_basic.keys()).union(
-            term_scores_combobasic.keys(),
-            term_scores_cvalue.keys(),
-            term_scores_rerank.keys(),
-        ):
-            score = +term_scores_cvalue.get(term, 0) * term_scores_rerank.get(term, 0)
-            term_scores[term] = score
-
-        evaluator = TermEvaluator(
-            gt_path=args.gt_path,
-            term_scores=term_scores,
-            term_occurrences=term_occurrences,
-            filter_single_word=not args.allow_single_word,
-        )
-        # Dumping scores into a CSV file
-        with open("/tmp/matrix_uk.csv", "w", encoding="utf-8") as csv_out:
-            writer = csv.DictWriter(
-                csv_out,
-                fieldnames=[
-                    "Term",
-                    "Basic",
-                    "ComboBasic",
-                    "CValue",
-                    "ReRank",
-                    "target",
-                ],
-            )
-            writer.writeheader()
-            for term in term_scores:
-                target = False
-                for gt_term in evaluator.gt_terms:
-                    if evaluator._is_term_match(gt_term, term):
-                        target = True
-                        break
-
-                writer.writerow(
-                    {
-                        "Term": term,
-                        "Basic": term_scores_basic.get(term, 0),
-                        "ComboBasic": term_scores_combobasic.get(term, 0),
-                        "CValue": term_scores_cvalue.get(term, 0),
-                        "ReRank": term_scores_rerank.get(term, 0),
-                        "target": int(target),
-                    }
-                )
     else:
         raise ValueError(f"Invalid method: {args.method}")
 
@@ -416,12 +372,59 @@ if __name__ == "__main__":
         term_scores=term_scores,
         term_occurrences=term_occurrences,
         filter_single_word=not args.allow_single_word,
-        method=args.method,
-        language=nlp.lang
+        method=(
+            f"{args.method} ({args.rerank_score_adjustment})"
+            if args.method == "rerank"
+            else args.method
+        ),
+        language=nlp.lang,
     )
     if args.verbose:
-        print(f"Loaded {len(evaluator.gt_terms)} ground truth terms from {args.gt_path}")
+        print(
+            f"Loaded {len(evaluator.gt_terms)} ground truth terms from {args.gt_path}"
+        )
         print(evaluator.calculate_metrics(0.0, verbose=True))
+
+        if args.method == "rerank":
+            gt_scores_per_length = defaultdict(list)
+            adjusted_gt_scores_per_length = defaultdict(list)
+
+            fp_scores_per_length = defaultdict(list)
+            adjusted_fp_scores_per_length = defaultdict(list)
+
+            for term in reranker.score_per_term:
+                term_len = term.count(" ") + 1
+                if term in evaluator.gt_terms:
+                    gt_scores_per_length[term_len] += reranker.score_per_term[term]
+
+                    adjusted_gt_scores_per_length[
+                        term_len
+                    ] += reranker.adjusted_score_per_term[term]
+                else:
+                    fp_scores_per_length[term_len] += reranker.score_per_term[term]
+                    adjusted_fp_scores_per_length[
+                        term_len
+                    ] += reranker.adjusted_score_per_term[term]
+
+            with open(
+                args.output_path.with_stem(
+                    args.output_path.stem + "rerank"
+                ).with_suffix(".json"),
+                "w",
+                encoding="utf-8",
+            ) as f:
+                json.dump(
+                    {
+                        "gt_scores_per_length": gt_scores_per_length,
+                        "adjusted_gt_scores_per_length": adjusted_gt_scores_per_length,
+                        "fp_scores_per_length": fp_scores_per_length,
+                        "adjusted_fp_scores_per_length": adjusted_fp_scores_per_length,
+                        "all_scores_per_length": reranker.score_per_length,
+                        "all_adjusted_scores_per_length": reranker.adjusted_score_per_length,
+                    },
+                    f,
+                    indent=4,
+                )
 
     fig = evaluator.plot_f1_curve(
         min_threshold=terms_min_score,

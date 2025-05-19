@@ -1,4 +1,8 @@
+import json
 from typing import List, Union, Optional, Dict
+from collections import defaultdict
+from pathlib import Path
+from statistics import median
 
 import spacy
 from spacy.tokens import Doc, Span
@@ -27,6 +31,10 @@ class SentenceSimilarityCalculator:
         """
         self.model_name = model_name
         self.device = device
+        self.score_per_length = defaultdict(list)
+        self.adjusted_score_per_length = defaultdict(list)
+        self.score_per_term = defaultdict(list)
+        self.adjusted_score_per_term = defaultdict(list)
 
         # Load the sentence transformer model
         self.model = SentenceTransformer(model_name, device=device)
@@ -54,10 +62,6 @@ class SentenceSimilarityCalculator:
         self,
         context_sentences: List[Union[str, Doc, Span]],
         target_span: Span,
-        length_adjust: bool = True,
-        length_factor: float = 0.2,
-        min_tokens: int = 3,
-        max_boost: float = 0.5,
     ) -> float:
         """
         Calculate cosine similarity between concatenated context sentences and the target span,
@@ -66,10 +70,6 @@ class SentenceSimilarityCalculator:
         Args:
             context_sentences: List of sentences to concatenate and compare against (as strings or spaCy objects)
             target_span: spaCy Span to compare with the concatenated context
-            length_adjust: Whether to apply length adjustment to boost scores for shorter spans
-            length_factor: Controls the strength of the length adjustment (higher = more adjustment)
-            min_tokens: Minimum number of tokens that can receive adjustment
-            max_boost: Maximum boost that can be applied to the similarity score
 
         Returns:
             Similarity score between the concatenated context and target span
@@ -95,17 +95,10 @@ class SentenceSimilarityCalculator:
 
         # Calculate cosine similarity using sentence_transformers util
         base_similarity = util.cos_sim(context_embedding, target_embedding).item()
-
-        # Apply non-linear adjustment for short spans if requested
-        if length_adjust and len(target_span) <= min_tokens:
-            # Calculate a boosting factor based on span length
-            # The shorter the span, the more boost (with diminishing returns)
-            token_count = len(target_span)
-            length_boost = max_boost * np.exp(-length_factor * token_count)
-
-            # Apply the boost, ensuring we don't exceed 1.0
-            adjusted_similarity = min(1.0, base_similarity + length_boost)
-            return adjusted_similarity
+        self.score_per_length[len(target_span)].append(
+            base_similarity
+        )
+        self.score_per_term[target_span.text.lower()].append(base_similarity)
 
         return base_similarity
 
@@ -115,6 +108,10 @@ class SentenceSimilarityCalculator:
         term_occurences=Dict[str, List[Span]],
         context_len: int = 3,
         pooling="max",
+        length_adjustment: str = "none",
+        legacy_length_factor: float = 0.2,
+        legacy_min_tokens: int = 3,
+        legacy_max_boost: float = 0.5,
     ) -> Dict[str, float]:
         """
         Rerank terms in a document based on their similarity to the context.
@@ -123,33 +120,113 @@ class SentenceSimilarityCalculator:
             doc: spaCy Doc object
             term_occurences: Dictionary of term occurences (spans) in the document
             context_len: Number of context sentences to consider
-            pooling: Pooling strategy for term embeddings (max, mean, "
+            pooling: Pooling strategy for term embeddings (max, mean). If there
+            is more than one occurence of a term, the similarity scores for it
+                pooled from all occurences using the specified strategy.
+            length_adjustment: Length adjustment strategy to boost short terms scores
+                (none, legacy, median, modified_z_score)
+
+            legacy_length_factor: Controls the strength of the length adjustment
+                (higher = more adjustment)
+            legacy_min_tokens: Minimum number of tokens that can receive adjustment
+            legacy_max_boost: Maximum boost that can be applied to the similarity score
         Returns:
             Lemma-score dict as Dict[str, float]
         """
         assert pooling in ["max", "mean"], "Pooling must be 'max' or 'mean'"
+        assert length_adjustment in ["none", "legacy", "median", "modified_z_score"], (
+            "Length adjustment must be 'none', 'legacy', 'median', or 'modified_z_score'"
+        )
 
         # Extract context sentences
         context_sentences = extract_context(doc, term_occurences, context_len)
-        # print(context_sentences)
 
-        # Calculate similarity for each term
-        term_scores = {}
-        for term, occurences in context_sentences.items():
-            term_score = []
+        # Calculate similarity for each term and group them by lemma and occurence (span)
+        term_scores = defaultdict(lambda: defaultdict(list))
+
+        for lemma, occurences in context_sentences.items():
             for context, span in occurences:
-                term_score.append(
+                term_scores[lemma][span].append(
                     self.calculate_similarity(
                         context_sentences=context, target_span=span
                     )
                 )
 
-            if pooling == "max":
-                term_scores[term] = max(term_score)
-            else:
-                term_scores[term] = sum(term_score) / len(occurences)
+        medians = {k: median(v) for k, v in self.score_per_length.items()}
+        max_median = max(medians.values())
+        medians_factor = {k: max_median / v for k, v in medians.items()}
 
-        return term_scores
+        mads = {}
+        for k, k_median in medians.items():
+            mads[k] = median([abs(v - k_median) for v in self.score_per_length[k]])
+
+        # Apply length adjustment to span scores if specified
+        for lemma, occ_scores in term_scores.items():
+            for term, scores in occ_scores.items():
+                term_length = len(term)
+
+                adjusted_scores = []
+
+                for score in scores:
+                    if length_adjustment == "none":
+                        adjusted_scores.append(score)
+                    elif length_adjustment == "legacy":
+                        # Calculate a boosting factor based on span length
+                        # The shorter the span, the more boost (with diminishing returns)
+
+                        if term_length <= legacy_min_tokens:
+                            length_boost = legacy_max_boost * np.exp(-legacy_length_factor * term_length)
+
+                            # Apply the boost, ensuring we don't exceed 1.0
+                            adjusted_scores.append(min(1.0, score + length_boost))
+                        else:
+                            adjusted_scores.append(score)
+                    elif length_adjustment == "median":
+                        adjusted_scores.append(
+                            score * medians_factor[term_length]
+                        )
+                    elif length_adjustment == "modified_z_score":
+                        adjusted_scores.append(
+                            0.6745 * (score - medians[term_length]) / mads[term_length]
+                        )
+
+                self.adjusted_score_per_length[len(term)] += adjusted_scores
+                self.adjusted_score_per_term[str(term)] += adjusted_scores
+
+                occ_scores[term] = adjusted_scores
+
+        # Calculate final scores for each lemma based on the specified pooling strategy
+        # and the adjusted scores of individual occurences of that lemma
+
+        final_lemma_scores = {}
+        for lemma, occurences in term_scores.items():
+            all_lemma_scores = []
+            for term, scores in occurences.items():
+                all_lemma_scores.extend(scores)
+
+            # Pool scores based on the specified strategy
+            if pooling == "max":
+                final_lemma_scores[lemma] = max(all_lemma_scores)
+            else:
+                final_lemma_scores[lemma] = sum(all_lemma_scores) / len(all_lemma_scores)
+
+        return final_lemma_scores
+
+    def export_score_per_length(self, filename: Path):
+        """
+        Export the score per length to a file.
+
+        Args:
+            filename: Name of the file to save the scores
+        """
+
+        with filename.open("w", encoding="utf-8") as f:
+            json.dump(self.score_per_length, f, indent=4)
+
+        with filename.with_stem(filename.stem + "_adjusted").open(
+            "w", encoding="utf-8"
+        ) as f:
+            json.dump(self.adjusted_score_per_length, f, indent=4)
 
 
 # Example usage
