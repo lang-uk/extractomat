@@ -29,10 +29,14 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     nlp = spacy.load(args.model)
-    layout = spaCyLayout(nlp)
-    raw_doc = layout(args.text)
 
-    text = nlp(raw_doc.text.lower())
+    layout = spaCyLayout(nlp)
+    if args.text.suffix == ".txt":
+        text = nlp(args.text.read_text(encoding="utf-8"))
+    else:
+        raw_doc = layout(args.text)
+        text = nlp(raw_doc.text.lower())
+
     lengths = Counter()
 
     terms_arr = []
