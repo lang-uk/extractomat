@@ -53,6 +53,7 @@ UPOS_TO_PENN: Dict[str, str] = {
     "SYM": "SYM",       # Dutch
     "PUNCT": ".",       # Dutch
     "X": "NN",          # Dutch
+    "SPACE": "NN",      # Dutch
 }
 
 
