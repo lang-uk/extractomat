@@ -196,35 +196,23 @@ def subphrases(phrase: str | Doc | Span, n_min: int = 2) -> Iterator[str]:
 
 
 def get_pos_fingerprint(phrase: Span) -> str:
-    """Generate a POS fingerprint for a spaCy Span.
+    tags: list[str] = []
+    for tok in phrase:
+        if tok.is_space:          # ⬅️ skip whitespace tokens
+            continue
+        if tok.text in {"-", "–", "—", "−"}:
+            tags.append("HYPH")
+        elif tok.is_punct:
+            tags.append("PUNCT")
+        else:
+            tags.append(tok.pos_)  # use UD tag, language-agnostic
+    return "".join(UPOS_TO_PENN.get(t, t) + "_" for t in tags)
 
-    Args:
-        phrase: spaCy Span object
-
-    Returns:
-        String representing the POS fingerprint
-    """
-
-    for token in phrase:
-        if token.text in ["-", "–", "—", "−"]:
-            token.tag_ = "HYPH"
-        elif token.is_punct:
-            token.tag_ = "PUNCT"
-
-    converted_tags = upos_to_penn([token.tag_ for token in phrase])
-    return "".join(token_tag + "_" for token_tag in converted_tags)
 
 
 def get_lemmatized_phrase(phrase: Span) -> List[str]:
-    """Return a lemmatized version of the phrase.
-
-    Args:
-        phrase: spaCy Span object
-
-    Returns:
-        Tokenized representation the lemmatized phrase
-    """
-    return [token.lemma_.lower() for token in phrase]
+    # ⬅️ ignore whitespace tokens so we never build an empty term
+    return [tok.lemma_.lower() for tok in phrase if not tok.is_space]
 
 
 def is_phrase_matching(phrase: Span, allow_single_word: bool = False) -> bool:
