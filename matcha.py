@@ -34,12 +34,25 @@ UPOS_TO_PENN: Dict[str, str] = {
     "PROPN": "NNP",  # Default to singular
     "ADJ": "JJ",  # Default to basic form
     "ADP": "IN",
-    "ADJA": "JJ", # German
-    "KOUS": "IN", # German
-    "KON": "CC", # German
-    "APPR": "IN", # German
-    "APPRART": "IN", # German
-    "KOUI": "IN", # German
+    "ADJA": "JJ",       # German
+    "KOUS": "IN",       # German
+    "KON": "CC",        # German
+    "APPR": "IN",       # German
+    "APPRART": "IN",    # German
+    "KOUI": "IN",       # German
+    "VERB": "VB",       # Dutch
+    "AUX": "MD",        # Dutch
+    "ADV": "RB",        # Dutch
+    "PRON": "PRP",      # Dutch
+    "DET": "DT",        # Dutch
+    "CCONJ": "CC",      # Dutch
+    "SCONJ": "IN",      # Dutch
+    "PART": "RP",       # Dutch
+    "INTJ": "UH",       # Dutch
+    "NUM": "CD",        # Dutch
+    "SYM": "SYM",       # Dutch
+    "PUNCT": ".",       # Dutch
+    "X": "NN",          # Dutch
 }
 
 
