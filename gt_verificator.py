@@ -29,6 +29,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     nlp = spacy.load(args.model)
+    nlp.max_length = 10_000_000
 
     layout = spaCyLayout(nlp)
     if args.text.suffix == ".txt":
@@ -63,17 +64,33 @@ if __name__ == "__main__":
         writer = csv.writer(f)
         matches_in_text = list()
 
-        for phrase in ngrams(text, n_min=1, n_max=max_len):
-            phrase_str = (
-                (" ".join(tok.text for tok in phrase)).lower().replace(" - ", "-")
-            )
-            phrase_lemma_str = (
-                (" ".join(tok.lemma_ for tok in phrase)).lower().replace(" - ", "-")
-            )
+        ngrams = list(ngrams(text, n_min=1, n_max=max_len))
 
-            for term in terms_arr:
+        for term in terms_arr:
+            if term in ngrams:
+                # If the term itself is in the text, we can skip it
+                writer.writerow([term])
+                matches_in_text.append(term)
+                continue
+            # filtered_ngrams = [ngram for ngram in ngrams if len(ngram) == term.count(" ") + 1]
+            filtered_ngrams = [
+                ngram
+                for ngram in filtered_ngrams
+                if len(term) + 5 <= len(str(ngram)) >= len(term) - 5
+            ]
+
+            if not filtered_ngrams:
+                continue
+
+            for phrase in filtered_ngrams:
+                phrase_str = (
+                    (" ".join(tok.text for tok in phrase)).lower().replace(" - ", "-")
+                )
+                phrase_lemma_str = (
+                    (" ".join(tok.lemma_ for tok in phrase)).lower().replace(" - ", "-")
+                )
                 score_orig = jaro(phrase_str, term)
-                score_lemma = jaro(phrase_lemma_str, term)
+                # score_lemma = jaro(phrase_lemma_str, term)
 
                 if score_orig > terms_best_match[term]:
                     terms_best_match[term] = score_orig

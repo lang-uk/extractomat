@@ -325,6 +325,7 @@ if __name__ == "__main__":
             "entity",
         ],
     )
+    nlp.max_length = 10_000_000
     layout = spaCyLayout(nlp)
     if args.text.suffix == ".txt":
         tagged_doc = nlp(args.text.read_text(encoding="utf-8"))
