@@ -53,20 +53,6 @@ We used `extractomat` in our experiments on building unsupervised bilingual glos
 
 
 ## Citing the paper
-Extractomat is released as part of the paper:
+Extractomat has been released as a part of the research results leading to the following paper: 
 
-```
-Building Multilingual Terminological Bridges between Language-Specific Knowledge Silos 
-
-Dmytro Chaplynskyi1[0009-0000-0869-0999], Tim Wittenborg 2[0009-0000-9933-8922], 
-Victoria Kosa1[0000-0002-7300-8818], Gollam Rabby2[0000-0002-1212-0101], 
-Oleksii Ignatenko1[0000-0001-8692-2062], Sören Auer2[0000-0002-0698-2864],   
-and Vadim Ermolayev1[0000-0002-5159-254X]
-
-1 Ukrainian Catholic University, Lviv, Ukraine
-{chaplynskyi.dmytro, victoriya.kosa, o.ignatenko, 
-ermolayev}@ucu.edu.ua
-
-2 TIB Leibniz Information Centre for Science and Technology, Hanover, Germany, 
-{tim.wittenborg, gollam.rabby, soeren.auer}@tib.eu 
-```
+Chaplynskyi, D., Wittenborg, T., Kosa, V., Rabby, G., Ignatenko, O., Auer, S., Ermolayev, V. (2025) Building Multilingual Terminological Bridges between Language-Specific Knowledge Silos. In: Proc. ICTERI-2025, CCIS, Springer (to appear)
