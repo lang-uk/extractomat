@@ -48,6 +48,10 @@ The OTRT dataset (first page of the ONTOLOGIES OF TIME: REVIEW AND TRENDS paper)
 `TimeOnto Sample *.docx` is the original text of the paper.
 
 
+## Practical application
+We used `extractomat` in our experiments on building unsupervised bilingual glossary. See https://github.com/lang-uk/schmezaurus for details.
+
+
 ## Citing the paper
 Extractomat is released as part of the paper:
 
