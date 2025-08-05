@@ -30,9 +30,9 @@ SECRET_REGEX_FOR_ONE_WORD = re.compile(r"^(NNS?_)$")
 
 # UPOS to Penn mapping dictionary
 UPOS_TO_PENN: Dict[str, str] = {
-    "NOUN": "NN",  # Default to singular
-    "PROPN": "NNP",  # Default to singular
-    "ADJ": "JJ",  # Default to basic form
+    "NOUN": "NN",       # Default to singular
+    "PROPN": "NNP",     # Default to singular
+    "ADJ": "JJ",        # Default to basic form
     "ADP": "IN",
     "ADJA": "JJ",       # German
     "KOUS": "IN",       # German
@@ -198,20 +198,25 @@ def subphrases(phrase: str | Doc | Span, n_min: int = 2) -> Iterator[str]:
 def get_pos_fingerprint(phrase: Span) -> str:
     tags: list[str] = []
     for tok in phrase:
-        if tok.is_space:          # ⬅️ skip whitespace tokens
+        if tok.is_space:
             continue
         if tok.text in {"-", "–", "—", "−"}:
             tags.append("HYPH")
         elif tok.is_punct:
             tags.append("PUNCT")
         else:
-            tags.append(tok.pos_)  # use UD tag, language-agnostic
+            tags.append(tok.pos_)
     return "".join(UPOS_TO_PENN.get(t, t) + "_" for t in tags)
 
 
 
 def get_lemmatized_phrase(phrase: Span) -> List[str]:
-    # ⬅️ ignore whitespace tokens so we never build an empty term
+    """Return a lemmatized version of the phrase.
+    Args:
+        phrase: spaCy Span object
+    Returns:
+        Tokenized representation the lemmatized phrase
+    """
     return [tok.lemma_.lower() for tok in phrase if not tok.is_space]
 
 
